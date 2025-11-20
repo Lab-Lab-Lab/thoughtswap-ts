@@ -29,16 +29,19 @@ if (!CANVAS_CLIENT_ID || !CANVAS_CLIENT_SECRET || !CANVAS_BASE_URL || !CANVAS_RE
     throw new Error("Missing one or more Canvas OAuth environment variables.");
 }
 
-// Helper to determine user role (simple example)
-// In a real app, you would check enrollments/permissions via the Canvas API.
-const determineRole = (email: string): 'TEACHER' | 'STUDENT' => {
-    // Simple check: if email contains 'teacher' or 'prof', assign TEACHER role
-    if (email.includes('teacher') || email.includes('prof')) {
-        return 'TEACHER';
-    }
-    return 'STUDENT';
+const determineRole = async (userId: string, accessToken: string): Promise<'TEACHER' | 'STUDENT' | 'OTHER'> => {
+    const enrollmentsResponse = await axios.get(
+        `${CANVAS_BASE_URL}/api/v1/users/${userId}/enrollments`,
+        {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        }
+    );
+    const enrollments = enrollmentsResponse.data;
+    const roles = enrollments.map((e: any) => e.type);
+    if (roles.includes('TeacherEnrollment')) return 'TEACHER';
+    if (roles.includes('StudentEnrollment')) return 'STUDENT';
+    return 'OTHER';
 };
-
 
 router.get('/', (req: Request, res: Response) => {
     const state = 'random_state_string';
@@ -103,7 +106,7 @@ router.get('/callback', async (req: Request, res: Response) => {
         }
 
         // Step 5: Upsert User into PostgreSQL
-        const role = determineRole(userEmail);
+        const role = await determineRole(user.id, access_token);
 
         const localUser = await prisma.user.upsert({
             where: { canvasId: String(user.id) },
