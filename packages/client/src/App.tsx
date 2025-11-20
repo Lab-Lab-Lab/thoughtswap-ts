@@ -9,19 +9,33 @@ type UserRole = 'STUDENT' | 'TEACHER' | null;
 interface AuthState {
   isLoggedIn: boolean;
   name: string | null;
+  email: string | null;
   role: UserRole;
 }
 
 function App() {
-  const [authState, setAuthState] = useState<AuthState>({
-    isLoggedIn: false,
-    name: null,
-    role: null,
+  const [authState, setAuthState] = useState<AuthState>(() => {
+    const saved = localStorage.getItem('thoughtswap_auth');
+    return saved ? JSON.parse(saved) : {
+      isLoggedIn: false,
+      name: null,
+      email: null,
+      role: null,
+    };
   });
   const [joinCode, setJoinCode] = useState('');
 
   // Get the base Canvas Auth URL from the Express server redirect endpoint
   const CANVAS_AUTH_URL = 'http://localhost:8000/accounts/canvas/login/';
+
+  const updateAuth = (newState: AuthState) => {
+    setAuthState(newState);
+    if (newState.isLoggedIn) {
+      localStorage.setItem('thoughtswap_auth', JSON.stringify(newState));
+    } else {
+      localStorage.removeItem('thoughtswap_auth');
+    }
+  };
 
   // --- OAuth Callback Handler ---
   useEffect(() => {
@@ -30,11 +44,13 @@ function App() {
       const params = new URLSearchParams(window.location.search);
       const name = params.get('name');
       const role = params.get('role') as UserRole;
+      const email = params.get('email');
 
-      if (name && role) {
-        setAuthState({
+      if (name && role && email) {
+        updateAuth({
           isLoggedIn: true,
           name: decodeURIComponent(name),
+          email: decodeURIComponent(email),
           role: role,
         });
       }
@@ -46,24 +62,15 @@ function App() {
 
   const handleLogout = () => {
     // In a real app, you would hit a backend endpoint to clear the session/JWT
-    setAuthState({ isLoggedIn: false, name: null, role: null });
+    setAuthState({ isLoggedIn: false, name: null, email: null, role: null });
     setJoinCode('');
+    socket.disconnect();
   };
 
   // --- Student Join Logic (for authenticated students) ---
-  const handleStudentJoin = () => {
-    if (!joinCode.trim()) return alert('Please enter a room code.');
-
-    // For a real app, the server would handle the auth check upon JOIN_ROOM
-    socket.auth = {
-      name: authState.name,
-      role: authState.role,
-      // In a real app, this would be a JWT/Session ID
-    };
-    socket.connect();
-
-    // Emit join event with the code
-    socket.emit('JOIN_ROOM', { joinCode });
+  const handleStudentJoin = (code: string) => {
+    setJoinCode(code);
+    // NOTE: Actual socket join logic moved to StudentView to handle errors better
   };
 
   if (!authState.isLoggedIn) {
@@ -110,6 +117,7 @@ function App() {
       {authState.role === 'TEACHER' ?
         <TeacherView /> :
         <StudentView
+          auth={authState}
           onJoin={handleStudentJoin}
           joinCode={joinCode}
         />

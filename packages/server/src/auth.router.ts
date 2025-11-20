@@ -125,7 +125,7 @@ router.get('/callback', async (req: Request, res: Response) => {
         });
 
         // Final Redirect back to the frontend
-        const frontendRedirect = `http://localhost:5173/auth/success?name=${encodeURIComponent(localUser.name)}&role=${localUser.role}`;
+        const frontendRedirect = `http://localhost:5173/auth/success?name=${encodeURIComponent(localUser.name)}&role=${localUser.role}&email=${encodeURIComponent(localUser.email)}`;
 
         return res.redirect(frontendRedirect);
 
