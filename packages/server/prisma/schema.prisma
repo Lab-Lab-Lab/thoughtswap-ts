@@ -8,37 +8,40 @@ datasource db {
 }
 
 model User {
-  id               String   @id @default(uuid())
-  canvasId         String   @unique // Unique ID provided by Canvas
-  name             String
-  email            String   @unique
-  role             String   @default("STUDENT") // STUDENT or TEACHER
-  accessToken      String
-  refreshToken     String?  // Needed for token refresh
+  id           String   @id @default(uuid())
+  canvasId     String   @unique
+  name         String
+  email        String   @unique
+  role         String   @default("STUDENT") // STUDENT or TEACHER
+  accessToken  String
+  refreshToken String?
   
-  // Future relations for course and thoughts will go here
+  thoughts     Thought[] // Relation to thoughts authored by this user
+
   @@map("users")
 }
 
 model Course {
-  id        String   @id @default(uuid())
-  joinCode  String   @unique
+  id        String    @id @default(uuid())
+  joinCode  String    @unique
   title     String
+  teacherId String    // Added: Link to the teacher (Canvas ID or User ID)
   sessions  Session[]
+
   @@map("courses")
 }
 
 model Session {
-  id        String   @id @default(uuid())
+  id        String      @id @default(uuid())
   courseId  String
-  course    Course   @relation(fields: [courseId], references: [id])
-  status    String   @default("ACTIVE") // ACTIVE, SWAPPING, CLOSED
+  course    Course      @relation(fields: [courseId], references: [id])
+  status    String      @default("ACTIVE") // ACTIVE, SWAPPING, COMPLETED
   prompts   PromptUse[]
 }
 
 model PromptUse {
   id        String    @id @default(uuid())
-  content   String    // The actual text of the prompt
+  content   String
   sessionId String
   session   Session   @relation(fields: [sessionId], references: [id])
   thoughts  Thought[]
@@ -47,8 +50,12 @@ model PromptUse {
 model Thought {
   id          String    @id @default(uuid())
   content     String
-  authorId    String    // Could be Canvas ID
-  assignedTo  String?   // The Canvas ID of the student reviewing this thought
+  
+  authorId    String
+  author      User      @relation(fields: [authorId], references: [id]) // Relation for referential integrity
+
+  assignedTo  String?   // The socket/user ID of the student reviewing this thought
+  
   promptUseId String
   promptUse   PromptUse @relation(fields: [promptUseId], references: [id])
 }

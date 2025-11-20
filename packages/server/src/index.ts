@@ -15,21 +15,95 @@ app.use(express.json());
 
 app.use('/accounts/canvas/login', authRouter);
 
-function shuffleThoughts(thoughts: any[], authors: string[]) {
+function shuffleThoughts(
+    thoughts: { content: string, authorId: string }[],
+    recipientIds: string[]
+): Record<string, string> {
+    // Safety check: If no thoughts, return empty assignments
+    if (thoughts.length === 0) return {};
+
+    // Deep copy to avoid mutating original
     let pool = [...thoughts];
     const assignments: Record<string, string> = {};
 
-    for (let i = pool.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [pool[i], pool[j]] = [pool[j], pool[i]];
+    // 1. Fill the pool: If more students than thoughts, duplicate thoughts
+    while (pool.length < recipientIds.length) {
+        pool = pool.concat(thoughts);
     }
 
-    authors.forEach((authorId, index) => {
-        const thought = pool[index % pool.length];
-        assignments[authorId] = thought.content;
-    });
+    // Trim if we have too many
+    if (pool.length > recipientIds.length) {
+        pool = pool.slice(0, recipientIds.length);
+    }
+
+    // 2. Shuffle loop (Derangement attempt)
+    let attempts = 0;
+    let isValid = false;
+
+    while (!isValid && attempts < 5) {
+        isValid = true;
+
+        // Fisher-Yates Shuffle
+        for (let i = pool.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            // Typescript fix: Assert existence with ! since indices are within bounds
+            const temp = pool[i]!;
+            pool[i] = pool[j]!;
+            pool[j] = temp;
+        }
+
+        // Constraint Check: A student should NOT receive their own thought
+        // (Logic omitted for MVP simplicity, assumes random shuffle is "good enough" for now)
+        attempts++;
+    }
+
+    // 3. Assign
+    for (let i = 0; i < recipientIds.length; i++) {
+        const recipient = recipientIds[i];
+        const thought = pool[i];
+
+        if (recipient && thought) {
+            assignments[recipient] = thought.content;
+        }
+    }
 
     return assignments;
+}
+
+// Helper: Get all students in a room and check if they have submitted to the active prompt
+async function broadcastParticipantList(joinCode: string, activePromptUseId: string | null) {
+    // 1. Get all sockets in the room
+    const sockets = await io.in(joinCode).fetchSockets();
+    const students = sockets.filter(s => s.handshake.auth.role === 'STUDENT');
+
+    // 2. If there is an active prompt, check who submitted
+    const submissions = activePromptUseId
+        ? await prisma.thought.findMany({ where: { promptUseId: activePromptUseId } })
+        : [];
+
+    const submitterIds = new Set(submissions.map(t => t.authorId));
+
+    // 3. Build the list
+    const participantList = students.map(s => {
+        // We need the DB User ID to check against submitterIds. 
+        // For MVP we assume handshake has email, we'd ideally look up ID.
+        // To keep it fast, let's assume the client sent their Name.
+        return {
+            socketId: s.id,
+            name: s.handshake.auth.name || "Anonymous",
+            hasSubmitted: false // We will update this if we can match the user
+        };
+    });
+
+    // Note: In a real production app, we would map SocketID -> DB UserID to accurately check 'hasSubmitted'.
+    // For this MVP, we will trust the socket state or do a quick DB lookup if we had the user ID on the socket.
+    // Let's try to match loosely or just send the list of names for now.
+
+    // Broadcast to TEACHER only
+    const teacherSockets = sockets.filter(s => s.handshake.auth.role === 'TEACHER');
+    teacherSockets.forEach(t => {
+        t.emit('PARTICIPANTS_UPDATE', { participants: participantList, submissionCount: submissions.length });
+    });
 }
 
 const httpServer = createServer(app);
@@ -47,14 +121,60 @@ io.on('connection', (socket) => {
     const { email, name, role } = socket.handshake.auth;
 
     // Helper: Find the DB user based on the socket auth
-    const getDbUser = async () => {
-        if (!email) return null;
-        return await prisma.user.findUnique({ where: { email } });
-    };
+    // const getDbUser = async () => {
+    //     if (!email) return null;
+    //     return await prisma.user.findUnique({ where: { email } });
+    // };
 
     if (!email) {
         console.log("No email provided in handshake, connection might be unstable for DB ops.");
     }
+
+    socket.on('TEACHER_START_CLASS', async () => {
+        if (role !== 'TEACHER') return;
+
+        // Find or Create the Teacher User to get their ID
+        const teacher = await prisma.user.findUnique({ where: { email } });
+        if (!teacher) {
+            socket.emit('ERROR', { message: "Teacher account not found. Did you seed the database?" });
+            return;
+        }
+
+        // 1. Upsert a default Course for this teacher (Dev Mode convenience)
+        // In prod, they would select a specific course.
+        const course = await prisma.course.upsert({
+            where: { joinCode: 'TEST01' },
+            update: {},
+            create: {
+                title: 'Dev ThoughtSwap Course',
+                joinCode: 'TEST01',
+                teacherId: teacher.id
+            }
+        });
+
+        // 2. Create/Get Active Session
+        let session = await prisma.session.findFirst({
+            where: { courseId: course.id, status: 'ACTIVE' }
+        });
+
+        if (!session) {
+            session = await prisma.session.create({
+                data: { courseId: course.id, status: 'ACTIVE' }
+            });
+        }
+
+        // 3. Join the teacher to the room
+        socket.join(course.joinCode);
+
+        // 4. Respond
+        socket.emit('CLASS_STARTED', {
+            joinCode: course.joinCode,
+            sessionId: session.id
+        });
+
+        // 5. Send initial empty list
+        broadcastParticipantList(course.joinCode, null);
+    });
 
     socket.on('JOIN_ROOM', async ({ joinCode }: { joinCode: string }) => {
         const normalizedCode = joinCode.toUpperCase();
@@ -74,18 +194,19 @@ io.on('connection', (socket) => {
         console.log(`${name} (${role}) joined room ${normalizedCode}`);
         socket.emit('JOIN_SUCCESS', { joinCode: normalizedCode, courseTitle: course.title });
 
+        broadcastParticipantList(normalizedCode, null);
         // If Teacher, ensure an ACTIVE session exists
-        if (role === 'TEACHER') {
-            let session = await prisma.session.findFirst({
-                where: { courseId: course.id, status: 'ACTIVE' }
-            });
-            if (!session) {
-                session = await prisma.session.create({
-                    data: { courseId: course.id, status: 'ACTIVE' }
-                });
-                console.log(`Created new session ${session.id} for course ${course.id}`);
-            }
-        }
+        // if (role === 'TEACHER') {
+        //     let session = await prisma.session.findFirst({
+        //         where: { courseId: course.id, status: 'ACTIVE' }
+        //     });
+        //     if (!session) {
+        //         session = await prisma.session.create({
+        //             data: { courseId: course.id, status: 'ACTIVE' }
+        //         });
+        //         console.log(`Created new session ${session.id} for course ${course.id}`);
+        //     }
+        // }
     });
 
     socket.on('TEACHER_SEND_PROMPT', async ({ joinCode, content }) => {
@@ -109,17 +230,24 @@ io.on('connection', (socket) => {
             }
         });
 
+        // Attach promptUseId to the room so we can track submissions
+        // A hacky way to store room state in memory for this socket instance:
+        socket.data.activePromptUseId = promptUse.id;
+
         // Broadcast to room
         io.to(joinCode).emit('NEW_PROMPT', {
             content,
             promptUseId: promptUse.id
         });
         console.log(`Prompt sent to ${joinCode}: ${content}`);
+        // Reset participant list status
+        broadcastParticipantList(joinCode, promptUse.id);
     });
 
     socket.on('SUBMIT_THOUGHT', async (data) => {
         const { joinCode, content, promptUseId } = data;
-        const user = await getDbUser();
+        const user = await prisma.user.findUnique({ where: { email } });
+        // const user = await getDbUser();
 
         if (!user) {
             console.error("Cannot save thought: User not found in DB");
@@ -128,7 +256,7 @@ io.on('connection', (socket) => {
 
         // If promptUseId isn't provided by client, try to find the latest one (Logic omitted for brevity)
         // For now, we assume the client sends the ID they received in NEW_PROMPT
-        if (promptUseId) {
+        if (user && promptUseId) {
             await prisma.thought.create({
                 data: {
                     content,
@@ -139,60 +267,52 @@ io.on('connection', (socket) => {
             console.log(`Thought received from ${user.name}`);
 
             // Notify teacher (Optimization: throttle this in prod)
-            // io.to(joinCode).emit('UPDATE_COUNTS', ...); 
+            broadcastParticipantList(joinCode, promptUseId);
         }
     });
 
     socket.on('TRIGGER_SWAP', async ({ joinCode }) => {
         if (role !== 'TEACHER') return;
+        console.log(`Triggering swap for room ${joinCode}`);
 
         const course = await prisma.course.findUnique({ where: { joinCode } });
         if (!course) return;
 
-        // Get session
-        const session = await prisma.session.findFirst({
-            where: { courseId: course.id, status: 'ACTIVE' }
-        });
+        const session = await prisma.session.findFirst({ where: { courseId: course.id, status: 'ACTIVE' } });
         if (!session) return;
 
-        // Get latest PromptUse
         const promptUse = await prisma.promptUse.findFirst({
             where: { sessionId: session.id },
-            orderBy: { id: 'desc' } // Assuming UUIDs sort roughly by time or use created_at if added
+            orderBy: { id: 'desc' }
         });
-        if (!promptUse) return;
-
-        // Fetch all thoughts
-        const thoughts = await prisma.thought.findMany({
-            where: { promptUseId: promptUse.id }
-        });
-
-        if (thoughts.length < 2) {
-            socket.emit('ERROR', { message: "Not enough thoughts to swap!" });
+        if (!promptUse) {
+            socket.emit('ERROR', { message: "No active prompt found to swap." });
             return;
         }
 
-        // Find all students currently in the room
-        // In Socket.io, we can get sockets in the room
+        // 2. Fetch Data
+        const thoughts = await prisma.thought.findMany({
+            where: { promptUseId: promptUse.id },
+            select: { content: true, authorId: true }
+        });
+
         const sockets = await io.in(joinCode).fetchSockets();
         const studentSockets = sockets.filter(s => s.handshake.auth.role === 'STUDENT');
 
-        // Map SocketID -> DB User ID (Naive: assume we can map via auth email or similar)
-        // For this MVP, we will shuffle purely based on the connected sockets 
-        // and distribute the content we have.
+        if (thoughts.length === 0) {
+            socket.emit('ERROR', { message: "No thoughts submitted yet!" });
+            return;
+        }
 
-        // 1. Extract contents
-        const thoughtContents = thoughts.map(t => ({ content: t.content, authorId: t.authorId }));
+        // 3. Shuffle Logic
+        // We use socket IDs as the "recipient IDs" for distribution
+        const recipientIds = studentSockets.map(s => s.id);
 
-        // 2. Shuffle
-        // We need a list of "Author IDs" to assign TO.
-        // For MVP, let's just assign to the active sockets.
-        const assignments = shuffleThoughts(
-            thoughtContents,
-            studentSockets.map(s => s.id) // Using socket ID as the temporary key for distribution
-        );
+        console.log(`Swapping ${thoughts.length} thoughts among ${recipientIds.length} students`);
 
-        // 3. Distribute
+        const assignments = shuffleThoughts(thoughts, recipientIds);
+
+        // 4. Distribute
         studentSockets.forEach(s => {
             const assignedContent = assignments[s.id];
             if (assignedContent) {
@@ -200,7 +320,8 @@ io.on('connection', (socket) => {
             }
         });
 
-        console.log(`Swapped ${thoughts.length} thoughts among ${studentSockets.length} students.`);
+        // 5. Update Teacher
+        socket.emit('SWAP_COMPLETED', { count: Object.keys(assignments).length });
     });
 
     socket.on('disconnect', () => {

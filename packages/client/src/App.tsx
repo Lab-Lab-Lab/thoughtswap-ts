@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { socket } from './socket';
 import StudentView from './components/StudentView';
 import TeacherView from './components/TeacherView';
-import { LogOut, Users, Zap } from 'lucide-react';
+import { LogOut, Users, Zap, Bug } from 'lucide-react';
 
 type UserRole = 'STUDENT' | 'TEACHER' | null;
 
@@ -25,7 +25,6 @@ function App() {
   });
   const [joinCode, setJoinCode] = useState('');
 
-  // Get the base Canvas Auth URL from the Express server redirect endpoint
   const CANVAS_AUTH_URL = 'http://localhost:8000/accounts/canvas/login/';
 
   const updateAuth = (newState: AuthState) => {
@@ -37,9 +36,7 @@ function App() {
     }
   };
 
-  // --- OAuth Callback Handler ---
   useEffect(() => {
-    // Check if the current URL is the successful redirect from the backend
     if (window.location.pathname === '/auth/success') {
       const params = new URLSearchParams(window.location.search);
       const name = params.get('name');
@@ -54,23 +51,27 @@ function App() {
           role: role,
         });
       }
-
-      // Clean up the URL state
       window.history.replaceState({}, document.title, "/");
     }
   }, []);
 
+  const handleDevLogin = () => {
+    updateAuth({
+      isLoggedIn: true,
+      name: "Dev Teacher",
+      email: "teacher@dev.com",
+      role: "TEACHER",
+    });
+  };
+
   const handleLogout = () => {
-    // In a real app, you would hit a backend endpoint to clear the session/JWT
-    setAuthState({ isLoggedIn: false, name: null, email: null, role: null });
+    updateAuth({ isLoggedIn: false, name: null, email: null, role: null });
     setJoinCode('');
     socket.disconnect();
   };
 
-  // --- Student Join Logic (for authenticated students) ---
   const handleStudentJoin = (code: string) => {
     setJoinCode(code);
-    // NOTE: Actual socket join logic moved to StudentView to handle errors better
   };
 
   if (!authState.isLoggedIn) {
@@ -83,16 +84,22 @@ function App() {
 
         <a
           href={CANVAS_AUTH_URL}
-          className="px-8 py-4 bg-indigo-600 text-white font-bold text-lg rounded-xl shadow-lg hover:bg-indigo-700 transition duration-200 flex items-center space-x-2"
+          className="px-8 py-4 bg-indigo-600 text-white font-bold text-lg rounded-xl shadow-lg hover:bg-indigo-700 transition duration-200 flex items-center space-x-2 mb-4"
         >
           <Users className="h-6 w-6" />
           <span>Login with Canvas</span>
         </a>
+
+        <button
+          onClick={handleDevLogin}
+          className="mt-8 px-6 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition flex items-center"
+        >
+          <Bug className="w-5 h-5 mr-2" /> Dev Teacher Login
+        </button>
       </div>
     );
   }
 
-  // If logged in, show the appropriate view
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
       <header className="flex justify-between items-center py-4 px-6 bg-white shadow-md rounded-xl mb-8">
@@ -115,7 +122,7 @@ function App() {
       </header>
 
       {authState.role === 'TEACHER' ?
-        <TeacherView /> :
+        <TeacherView auth={authState} /> :
         <StudentView
           auth={authState}
           onJoin={handleStudentJoin}
