@@ -1,4 +1,5 @@
-import { Shuffle, ArrowRight } from 'lucide-react';
+import { Shuffle, ArrowRight, RefreshCw } from 'lucide-react';
+import { socket } from '../socket';
 
 interface DistributionItem {
     studentName: string;
@@ -8,10 +9,17 @@ interface DistributionItem {
 
 interface TeacherDistributionGraphProps {
     distribution: Record<string, DistributionItem>;
+    joinCode?: string; // Need joinCode to emit reassign event
 }
 
-export default function TeacherDistributionGraph({ distribution }: TeacherDistributionGraphProps) {
+export default function TeacherDistributionGraph({ distribution, joinCode }: TeacherDistributionGraphProps) {
     if (Object.keys(distribution).length === 0) return null;
+
+    const handleReassign = (socketId: string) => {
+        if (joinCode) {
+            socket.emit('TEACHER_REASSIGN_DISTRIBUTION', { joinCode, studentSocketId: socketId });
+        }
+    };
 
     return (
         <div className="bg-white rounded-xl shadow-lg border-t-4 border-purple-500 p-4 sm:p-6 mt-6">
@@ -29,6 +37,7 @@ export default function TeacherDistributionGraph({ distribution }: TeacherDistri
                             <th className="px-4 py-2 text-center w-10"></th>
                             <th className="px-4 py-2 w-1/4">Recipient</th>
                             <th className="px-4 py-2 w-1/2">Content Preview</th>
+                            <th className="px-4 py-2 w-10">Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -38,6 +47,15 @@ export default function TeacherDistributionGraph({ distribution }: TeacherDistri
                                 <td className="px-4 py-3 text-center text-gray-400"><ArrowRight className="w-4 h-4 mx-auto" /></td>
                                 <td className="px-4 py-3 font-medium text-indigo-600">{data.studentName}</td>
                                 <td className="px-4 py-3 text-gray-500 italic truncate max-w-xs">{data.thoughtContent}</td>
+                                <td className="px-4 py-3 text-center">
+                                    <button
+                                        onClick={() => handleReassign(socketId)}
+                                        title="Reassign Thought"
+                                        className="text-gray-400 hover:text-purple-600 transition p-1 rounded hover:bg-purple-50"
+                                    >
+                                        <RefreshCw className="w-4 h-4" />
+                                    </button>
+                                </td>
                             </tr>
                         ))}
                     </tbody>

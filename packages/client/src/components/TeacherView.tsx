@@ -336,7 +336,7 @@ export default function TeacherView({ auth }: TeacherViewProps) {
                         </button>
                     </div>
 
-                    <TeacherDistributionGraph distribution={distribution} />
+                    <TeacherDistributionGraph distribution={distribution} joinCode={joinCode} />
 
                     {promptSent && (
                         <div className="bg-white rounded-xl shadow-lg border-t-4 border-indigo-400 p-4 sm:p-6">

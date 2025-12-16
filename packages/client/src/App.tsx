@@ -3,6 +3,7 @@ import { socket } from './socket';
 import StudentView from './components/StudentView';
 import TeacherView from './components/TeacherView';
 import Modal from './components/Modal';
+import OnboardingTour from './components/OnboardingTour'; // Import Tour
 import { LogOut, Users, Zap, Play, GraduationCap } from 'lucide-react';
 
 type UserRole = 'STUDENT' | 'TEACHER' | null;
@@ -35,6 +36,7 @@ function App() {
   const [joinCode, setJoinCode] = useState('');
   const [authErrorModal, setAuthErrorModal] = useState(false);
   const [showConsentModal, setShowConsentModal] = useState(false);
+  const [showTour, setShowTour] = useState(false); // Tour State
 
   // TODO: Change the following to the correct Canvas Auth URL
   const CANVAS_AUTH_URL = 'http://localhost:8000/accounts/canvas/login/';
@@ -78,10 +80,12 @@ function App() {
     };
 
     const handleConsentStatus = (data: { consentGiven: boolean, consentDate: string | null }) => {
-      // If consent hasn't been explicitly given (we assume false means declined/not given yet), 
-      // we check if they have a date. If date is null, they haven't decided.
+      // If consent hasn't been explicitly given/decided
       if (data.consentDate === null) {
         setShowConsentModal(true);
+      } else {
+        // Check for tour if consent is already decided
+        checkTour();
       }
     };
 
@@ -94,7 +98,6 @@ function App() {
     };
   }, []);
 
-  // Connect socket early to check consent if logged in
   useEffect(() => {
     if (authState.isLoggedIn && !socket.connected) {
       socket.auth = {
@@ -106,9 +109,23 @@ function App() {
     }
   }, [authState]);
 
+  const checkTour = () => {
+    const tourDone = localStorage.getItem('thoughtswap_tour_completed');
+    if (!tourDone && authState.isLoggedIn) {
+      setShowTour(true);
+    }
+  };
+
   const handleConsentResponse = (gaveConsent: boolean) => {
     socket.emit('UPDATE_CONSENT', { consentGiven: gaveConsent });
     setShowConsentModal(false);
+    // Trigger tour after consent decision
+    checkTour();
+  };
+
+  const handleTourComplete = () => {
+    localStorage.setItem('thoughtswap_tour_completed', 'true');
+    setShowTour(false);
   };
 
   const handleDemoLogin = (role: UserRole) => {
@@ -201,7 +218,7 @@ function App() {
       {/* Consent Modal */}
       <Modal
         isOpen={showConsentModal}
-        onClose={() => handleConsentResponse(false)} // Auto-decline on close/X
+        onClose={() => handleConsentResponse(false)}
         title="Research Consent"
         type="confirm"
         confirmText="I Consent"
@@ -214,6 +231,14 @@ function App() {
           <p>You can still use the application if you decline, but your data will be excluded from research analysis.</p>
         </div>
       </Modal>
+
+      {/* Onboarding Tour */}
+      {showTour && (
+        <OnboardingTour
+          role={authState.role || 'STUDENT'}
+          onComplete={handleTourComplete}
+        />
+      )}
 
       <header className="flex justify-between items-center py-4 px-6 bg-white shadow-md rounded-xl mb-8">
         <div className="flex items-center space-x-3">
