@@ -7,7 +7,18 @@
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
-import { Send, BookOpen, AlignLeft, List, BarChart2, Plus, X, Save, CheckCircle, RefreshCw } from 'lucide-react';
+import {
+    Send,
+    BookOpen,
+    AlignLeft,
+    List,
+    BarChart2,
+    Plus,
+    X,
+    Save,
+    CheckCircle,
+    RefreshCw,
+} from 'lucide-react';
 
 interface TeacherPromptComposerProps {
     promptInput: string;
@@ -24,13 +35,18 @@ interface TeacherPromptComposerProps {
 }
 
 export default function TeacherPromptComposer({
-    promptInput, setPromptInput,
-    promptType, setPromptType,
-    mcOptions, setMcOptions,
+    promptInput,
+    setPromptInput,
+    promptType,
+    setPromptType,
+    mcOptions,
+    setMcOptions,
     promptSent,
-    onSend, onSave, onOpenBank, onReset
+    onSend,
+    onSave,
+    onOpenBank,
+    onReset,
 }: TeacherPromptComposerProps) {
-
     const addMcOption = () => setMcOptions([...mcOptions, '']);
     const removeMcOption = (idx: number) => {
         const newOpts = [...mcOptions];
@@ -44,14 +60,21 @@ export default function TeacherPromptComposer({
     };
 
     return (
-        <div className={`p-4 sm:p-6 rounded-xl shadow-lg border-t-4 transition-all ${promptSent ? 'bg-gray-50 border-gray-300' : 'bg-white border-indigo-500'}`}>
+        <div
+            className={`p-4 sm:p-6 rounded-xl shadow-lg border-t-4 transition-all ${promptSent ? 'bg-gray-50 border-gray-300' : 'bg-white border-indigo-500'}`}
+        >
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
                 <h3 className="text-lg sm:text-xl font-bold text-gray-800 flex items-center">
-                    <Send className={`w-5 h-5 mr-2 ${promptSent ? 'text-gray-400' : 'text-indigo-500'}`} />
+                    <Send
+                        className={`w-5 h-5 mr-2 ${promptSent ? 'text-gray-400' : 'text-indigo-500'}`}
+                    />
                     Step 1: Create Prompt
                 </h3>
                 {!promptSent && (
-                    <button onClick={onOpenBank} className="text-sm text-indigo-600 font-semibold flex items-center hover:underline self-end sm:self-auto">
+                    <button
+                        onClick={onOpenBank}
+                        className="text-sm text-indigo-600 font-semibold flex items-center hover:underline self-end sm:self-auto"
+                    >
                         <BookOpen className="w-4 h-4 mr-1" /> Open Bank
                     </button>
                 )}
@@ -94,7 +117,9 @@ export default function TeacherPromptComposer({
                 {/* Multiple Choice Options */}
                 {!promptSent && promptType === 'MC' && (
                     <div className="pl-0 sm:pl-4 sm:border-l-2 border-purple-200 space-y-2">
-                        <p className="text-xs font-bold text-purple-500 uppercase">Answer Options</p>
+                        <p className="text-xs font-bold text-purple-500 uppercase">
+                            Answer Options
+                        </p>
                         {mcOptions.map((opt, idx) => (
                             <div key={idx} className="flex gap-2 items-center">
                                 <div className="w-6 h-6 rounded-full border-2 border-gray-300 flex items-center justify-center text-xs text-gray-400 font-mono flex-shrink-0">
@@ -108,14 +133,20 @@ export default function TeacherPromptComposer({
                                     className="flex-1 px-3 py-2 border border-gray-200 rounded text-sm focus:outline-none focus:border-purple-400"
                                 />
                                 {mcOptions.length > 2 && (
-                                    <button onClick={() => removeMcOption(idx)} className="text-gray-400 hover:text-red-500 p-1">
+                                    <button
+                                        onClick={() => removeMcOption(idx)}
+                                        className="text-gray-400 hover:text-red-500 p-1"
+                                    >
                                         <X className="w-4 h-4" />
                                     </button>
                                 )}
                             </div>
                         ))}
                         {mcOptions.length < 6 && (
-                            <button onClick={addMcOption} className="text-xs flex items-center text-purple-600 hover:underline font-medium mt-1 p-1">
+                            <button
+                                onClick={addMcOption}
+                                className="text-xs flex items-center text-purple-600 hover:underline font-medium mt-1 p-1"
+                            >
                                 <Plus className="w-3 h-3 mr-1" /> Add Option
                             </button>
                         )}
@@ -125,12 +156,19 @@ export default function TeacherPromptComposer({
                 {/* Scale Preview */}
                 {!promptSent && promptType === 'SCALE' && (
                     <div className="pl-0 sm:pl-4 sm:border-l-2 border-orange-200">
-                        <p className="text-xs font-bold text-orange-500 uppercase mb-2">Student View Preview</p>
+                        <p className="text-xs font-bold text-orange-500 uppercase mb-2">
+                            Student View Preview
+                        </p>
                         <div className="bg-gray-50 p-3 rounded-lg flex flex-col sm:flex-row justify-between items-center text-sm text-gray-500 gap-2">
                             <span>1 (Disagree)</span>
                             <div className="flex gap-1">
-                                {[1, 2, 3, 4, 5].map(n => (
-                                    <div key={n} className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center bg-white text-xs">{n}</div>
+                                {[1, 2, 3, 4, 5].map((n) => (
+                                    <div
+                                        key={n}
+                                        className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center bg-white text-xs"
+                                    >
+                                        {n}
+                                    </div>
                                 ))}
                             </div>
                             <span>5 (Agree)</span>
@@ -150,10 +188,11 @@ export default function TeacherPromptComposer({
                     <button
                         onClick={onSend}
                         disabled={promptSent || !promptInput}
-                        className={`w-full sm:flex-1 px-6 py-3 font-bold rounded-lg transition flex items-center justify-center ${promptSent
-                            ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                            : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md'
-                            }`}
+                        className={`w-full sm:flex-1 px-6 py-3 font-bold rounded-lg transition flex items-center justify-center ${
+                            promptSent
+                                ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                                : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md'
+                        }`}
                     >
                         {promptSent ? 'Sent' : 'Broadcast'}
                     </button>

@@ -16,14 +16,20 @@ interface StudentResponseInputProps {
 }
 
 export default function StudentResponseInput({
-    promptType, promptOptions, responseInput, setResponseInput, disabled
+    promptType,
+    promptOptions,
+    responseInput,
+    setResponseInput,
+    disabled,
 }: StudentResponseInputProps) {
-
     if (promptType === 'MC') {
         return (
             <div className="space-y-3">
                 {promptOptions.map((opt, idx) => (
-                    <label key={idx} className={`flex items-center p-3 sm:p-4 border rounded-lg cursor-pointer transition ${responseInput === opt ? 'border-purple-500 bg-purple-50 ring-1 ring-purple-500' : 'border-gray-200 hover:bg-gray-50'}`}>
+                    <label
+                        key={idx}
+                        className={`flex items-center p-3 sm:p-4 border rounded-lg cursor-pointer transition ${responseInput === opt ? 'border-purple-500 bg-purple-50 ring-1 ring-purple-500' : 'border-gray-200 hover:bg-gray-50'}`}
+                    >
                         <input
                             type="radio"
                             name="mc_option"
@@ -33,7 +39,9 @@ export default function StudentResponseInput({
                             disabled={disabled}
                             className="w-5 h-5 text-purple-600 border-gray-300 focus:ring-purple-500"
                         />
-                        <span className="ml-3 text-gray-700 font-medium text-sm sm:text-base">{opt}</span>
+                        <span className="ml-3 text-gray-700 font-medium text-sm sm:text-base">
+                            {opt}
+                        </span>
                     </label>
                 ))}
             </div>
@@ -53,17 +61,22 @@ export default function StudentResponseInput({
                             key={val}
                             onClick={() => !disabled && setResponseInput(val.toString())}
                             disabled={disabled}
-                            className={`w-10 h-10 sm:w-14 sm:h-14 rounded-full font-bold text-base sm:text-lg flex items-center justify-center transition shadow-sm ${responseInput === val.toString()
+                            className={`w-10 h-10 sm:w-14 sm:h-14 rounded-full font-bold text-base sm:text-lg flex items-center justify-center transition shadow-sm ${
+                                responseInput === val.toString()
                                     ? 'bg-orange-500 text-white transform scale-110 shadow-md ring-2 ring-orange-200'
                                     : 'bg-white border-2 border-gray-200 text-gray-600 hover:border-orange-300'
-                                }`}
+                            }`}
                         >
                             {val}
                         </button>
                     ))}
                 </div>
                 <div className="text-center h-6">
-                    {responseInput && <span className="text-orange-600 font-bold text-sm sm:text-base">Selected: {responseInput}</span>}
+                    {responseInput && (
+                        <span className="text-orange-600 font-bold text-sm sm:text-base">
+                            Selected: {responseInput}
+                        </span>
+                    )}
                 </div>
             </div>
         );

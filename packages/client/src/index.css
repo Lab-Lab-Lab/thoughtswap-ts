@@ -4,5 +4,5 @@
 
 /* Base styles for a nice modern look */
 body {
-  @apply bg-gray-50 text-gray-800;
+    @apply bg-gray-50 text-gray-800;
 }

@@ -17,17 +17,44 @@ interface Step {
 }
 
 const TEACHER_STEPS: Step[] = [
-    { title: "Welcome to ThoughtSwap!", content: "ThoughtSwap helps you facilitate anonymous peer review discussions. Let's take a quick tour." },
-    { title: "Create Prompts", content: "Use the Prompt Composer to create Text, Multiple Choice, or Scale questions." },
-    { title: "Prompt Bank", content: "Save your favorite prompts to the Bank for quick access in future classes." },
-    { title: "Launch & Swap", content: "Start a class, wait for students to submit, then click 'Swap Thoughts' to distribute anonymous responses for discussion." },
-    { title: "Review Distributions", content: "You can see exactly who received what thought and manually reassign them if needed." }
+    {
+        title: 'Welcome to ThoughtSwap!',
+        content:
+            "ThoughtSwap helps you facilitate anonymous peer review discussions. Let's take a quick tour.",
+    },
+    {
+        title: 'Create Prompts',
+        content: 'Use the Prompt Composer to create Text, Multiple Choice, or Scale questions.',
+    },
+    {
+        title: 'Prompt Bank',
+        content: 'Save your favorite prompts to the Bank for quick access in future classes.',
+    },
+    {
+        title: 'Launch & Swap',
+        content:
+            "Start a class, wait for students to submit, then click 'Swap Thoughts' to distribute anonymous responses for discussion.",
+    },
+    {
+        title: 'Review Distributions',
+        content:
+            'You can see exactly who received what thought and manually reassign them if needed.',
+    },
 ];
 
 const STUDENT_STEPS: Step[] = [
-    { title: "Welcome to ThoughtSwap!", content: "You'll be participating in anonymous peer reviews." },
-    { title: "Anonymity", content: "Your responses are anonymous to your peers, encouraging honest sharing." },
-    { title: "The Swap", content: "After submitting, you'll receive a random peer's thought to discuss or review." }
+    {
+        title: 'Welcome to ThoughtSwap!',
+        content: "You'll be participating in anonymous peer reviews.",
+    },
+    {
+        title: 'Anonymity',
+        content: 'Your responses are anonymous to your peers, encouraging honest sharing.',
+    },
+    {
+        title: 'The Swap',
+        content: "After submitting, you'll receive a random peer's thought to discuss or review.",
+    },
 ];
 
 interface OnboardingTourProps {
@@ -83,7 +110,11 @@ export default function OnboardingTour({ role, onComplete }: OnboardingTourProps
                         className="flex items-center px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition shadow-md hover:shadow-lg transform hover:-translate-y-0.5"
                     >
                         {currentStep === steps.length - 1 ? 'Get Started' : 'Next'}
-                        {currentStep === steps.length - 1 ? <Check className="w-5 h-5 ml-2" /> : <ArrowRight className="w-5 h-5 ml-2" />}
+                        {currentStep === steps.length - 1 ? (
+                            <Check className="w-5 h-5 ml-2" />
+                        ) : (
+                            <ArrowRight className="w-5 h-5 ml-2" />
+                        )}
                     </button>
                 </div>
             </div>

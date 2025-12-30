@@ -18,12 +18,12 @@ const prisma = new PrismaClient();
 const router = Router();
 
 const REQUIRED_SCOPES = [
-    "url:GET|/api/v1/accounts/:account_id/terms",
-    "url:GET|/api/v1/courses/:course_id/enrollments",
-    "url:GET|/api/v1/sections/:section_id/enrollments",
-    "url:GET|/api/v1/users/:user_id/enrollments",
-    "url:GET|/api/v1/courses/:course_id/sections",
-    "url:GET|/api/v1/users/:user_id/profile",
+    'url:GET|/api/v1/accounts/:account_id/terms',
+    'url:GET|/api/v1/courses/:course_id/enrollments',
+    'url:GET|/api/v1/sections/:section_id/enrollments',
+    'url:GET|/api/v1/users/:user_id/enrollments',
+    'url:GET|/api/v1/courses/:course_id/sections',
+    'url:GET|/api/v1/users/:user_id/profile',
 ].join(' ');
 
 // 1. Configuration Constants from .env
@@ -36,14 +36,17 @@ const {
 } = process.env;
 
 if (!CANVAS_CLIENT_ID || !CANVAS_CLIENT_SECRET || !CANVAS_BASE_URL || !CANVAS_REDIRECT_URI) {
-    throw new Error("Missing one or more Canvas OAuth environment variables.");
+    throw new Error('Missing one or more Canvas OAuth environment variables.');
 }
 
-const determineRole = async (userId: string, accessToken: string): Promise<'TEACHER' | 'STUDENT' | 'OTHER'> => {
+const determineRole = async (
+    userId: string,
+    accessToken: string
+): Promise<'TEACHER' | 'STUDENT' | 'OTHER'> => {
     const enrollmentsResponse = await axios.get(
         `${CANVAS_BASE_URL}/api/v1/users/${userId}/enrollments`,
         {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
+            headers: { Authorization: `Bearer ${accessToken}` },
         }
     );
     const enrollments = enrollmentsResponse.data;
@@ -56,7 +59,8 @@ const determineRole = async (userId: string, accessToken: string): Promise<'TEAC
 router.get('/', (req: Request, res: Response) => {
     const state = 'random_state_string';
 
-    const authUrl = `${CANVAS_BASE_URL}/login/oauth2/auth?` +
+    const authUrl =
+        `${CANVAS_BASE_URL}/login/oauth2/auth?` +
         `client_id=${CANVAS_CLIENT_ID}&` +
         `response_type=code&` +
         `redirect_uri=${CANVAS_REDIRECT_URI}&` +
@@ -102,17 +106,14 @@ router.get('/callback', async (req: Request, res: Response) => {
         const { access_token, refresh_token, user } = tokenResponse.data;
 
         // Step 4: Use Access Token to get User Profile (needed for email)
-        const profileResponse = await axios.get(
-            `${CANVAS_BASE_URL}/api/v1/users/self/profile`,
-            {
-                headers: { 'Authorization': `Bearer ${access_token}` }
-            }
-        );
+        const profileResponse = await axios.get(`${CANVAS_BASE_URL}/api/v1/users/self/profile`, {
+            headers: { Authorization: `Bearer ${access_token}` },
+        });
         const canvasProfile = profileResponse.data;
         const userEmail = canvasProfile.primary_email;
 
         if (!user || !userEmail) {
-            throw new Error("Missing primary email or user ID from Canvas profile.");
+            throw new Error('Missing primary email or user ID from Canvas profile.');
         }
 
         // Step 5: Upsert User into PostgreSQL
@@ -141,7 +142,6 @@ router.get('/callback', async (req: Request, res: Response) => {
         const frontendRedirect = `${FRONTEND_URL}/auth/success?name=${encodeURIComponent(localUser.name)}&role=${localUser.role}&email=${encodeURIComponent(localUser.email)}`;
 
         return res.redirect(frontendRedirect);
-
     } catch (error) {
         console.error('OAuth token exchange failed:', (error as any).message);
         return res.status(500).send('Authentication failed');

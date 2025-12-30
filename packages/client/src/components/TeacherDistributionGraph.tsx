@@ -21,7 +21,10 @@ interface TeacherDistributionGraphProps {
     joinCode?: string; // Need joinCode to emit reassign event
 }
 
-export default function TeacherDistributionGraph({ distribution, joinCode }: TeacherDistributionGraphProps) {
+export default function TeacherDistributionGraph({
+    distribution,
+    joinCode,
+}: TeacherDistributionGraphProps) {
     if (Object.keys(distribution).length === 0) return null;
 
     const handleReassign = (socketId: string) => {
@@ -51,11 +54,22 @@ export default function TeacherDistributionGraph({ distribution, joinCode }: Tea
                     </thead>
                     <tbody>
                         {Object.entries(distribution).map(([socketId, data]) => (
-                            <tr key={socketId} className="border-b border-gray-100 hover:bg-white transition">
-                                <td className="px-4 py-3 font-medium text-gray-700">{data.originalAuthorName}</td>
-                                <td className="px-4 py-3 text-center text-gray-400"><ArrowRight className="w-4 h-4 mx-auto" /></td>
-                                <td className="px-4 py-3 font-medium text-indigo-600">{data.studentName}</td>
-                                <td className="px-4 py-3 text-gray-500 italic truncate max-w-xs">{data.thoughtContent}</td>
+                            <tr
+                                key={socketId}
+                                className="border-b border-gray-100 hover:bg-white transition"
+                            >
+                                <td className="px-4 py-3 font-medium text-gray-700">
+                                    {data.originalAuthorName}
+                                </td>
+                                <td className="px-4 py-3 text-center text-gray-400">
+                                    <ArrowRight className="w-4 h-4 mx-auto" />
+                                </td>
+                                <td className="px-4 py-3 font-medium text-indigo-600">
+                                    {data.studentName}
+                                </td>
+                                <td className="px-4 py-3 text-gray-500 italic truncate max-w-xs">
+                                    {data.thoughtContent}
+                                </td>
                                 <td className="px-4 py-3 text-center">
                                     <button
                                         onClick={() => handleReassign(socketId)}

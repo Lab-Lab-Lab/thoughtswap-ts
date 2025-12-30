@@ -7,10 +7,19 @@
     ],
     "main": "index.js",
     "scripts": {
-        "dev": "concurrently \"npm run dev --workspace=packages/server\" \"npm run dev --workspace=packages/client\""
+        "dev": "concurrently \"npm run dev --workspace=packages/server\" \"npm run dev --workspace=packages/client\"",
+        "prepare": "husky"
+    },
+    "lint-staged": {
+        "**/*.{ts,tsx,js,jsx,json,md}": [
+            "prettier --write"
+        ]
     },
     "devDependencies": {
-        "concurrently": "^8.2.0"
+        "concurrently": "^8.2.0",
+        "husky": "^9.1.7",
+        "lint-staged": "^16.2.7",
+        "prettier": "^3.7.4"
     },
     "keywords": [],
     "author": "Victor Del Carpio",

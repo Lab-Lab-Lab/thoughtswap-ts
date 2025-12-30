@@ -35,17 +35,22 @@ export default function Modal({
     onConfirm,
     confirmText = 'Confirm',
     cancelText = 'Cancel',
-    isDestructive = false
+    isDestructive = false,
 }: ModalProps) {
     if (!isOpen) return null;
 
     const getIcon = () => {
         switch (type) {
-            case 'success': return <CheckCircle className="w-6 h-6 text-green-500" />;
-            case 'warning': return <AlertTriangle className="w-6 h-6 text-yellow-500" />;
-            case 'error': return <AlertTriangle className="w-6 h-6 text-red-500" />;
-            case 'confirm': return <AlertTriangle className="w-6 h-6 text-indigo-500" />;
-            default: return <Info className="w-6 h-6 text-indigo-500" />;
+            case 'success':
+                return <CheckCircle className="w-6 h-6 text-green-500" />;
+            case 'warning':
+                return <AlertTriangle className="w-6 h-6 text-yellow-500" />;
+            case 'error':
+                return <AlertTriangle className="w-6 h-6 text-red-500" />;
+            case 'confirm':
+                return <AlertTriangle className="w-6 h-6 text-indigo-500" />;
+            default:
+                return <Info className="w-6 h-6 text-indigo-500" />;
         }
     };
 
@@ -57,7 +62,10 @@ export default function Modal({
                         {getIcon()}
                         <h3 className="font-bold text-lg text-gray-800">{title}</h3>
                     </div>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition">
+                    <button
+                        onClick={onClose}
+                        className="text-gray-400 hover:text-gray-600 transition"
+                    >
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -79,11 +87,14 @@ export default function Modal({
                             <button
                                 onClick={() => {
                                     onConfirm?.();
-                                    // Removed onClose() here to prevent double-firing. 
+                                    // Removed onClose() here to prevent double-firing.
                                     // The parent component should handle state updates.
                                 }}
-                                className={`px-4 py-2 text-white font-semibold rounded-lg shadow-md transition ${isDestructive ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-700'
-                                    }`}
+                                className={`px-4 py-2 text-white font-semibold rounded-lg shadow-md transition ${
+                                    isDestructive
+                                        ? 'bg-red-500 hover:bg-red-600'
+                                        : 'bg-indigo-600 hover:bg-indigo-700'
+                                }`}
                             >
                                 {confirmText}
                             </button>
