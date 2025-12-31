@@ -22,11 +22,42 @@ import {
 } from 'lucide-react';
 import Modal from './Modal';
 
+interface Session {
+    id: string;
+    joinCode: string;
+    teacherName: string;
+    createdAt: string;
+    participantCount: number;
+}
+
+interface Thought {
+    id: string;
+    content: string;
+    authorName: string;
+    sessionId: string;
+}
+
+interface Swap {
+    id: string;
+    fromUser: string;
+    toUser: string;
+    thoughtContent: string;
+    timestamp: string;
+}
+
+interface Log {
+    id: string;
+    timestamp: string;
+    action: string;
+    userId: string;
+    details: string;
+}
+
 interface AdminData {
-    sessions: any[];
-    thoughts: any[];
-    swaps: any[];
-    logs: any[];
+    sessions: Session[];
+    thoughts: Thought[];
+    swaps: Swap[];
+    logs: Log[];
     stats: {
         totalConsented: number;
         totalUsers: number;
@@ -304,7 +335,7 @@ export default function AdminView({ onExit }: { onExit: () => void }) {
                                 Active Classrooms
                             </h2>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {data.sessions.map((session: any) => (
+                                {data.sessions.map((session: Session) => (
                                     <div
                                         key={session.id}
                                         className="bg-slate-900 border border-slate-800 rounded-lg p-5 hover:border-indigo-500/50 transition-colors"
@@ -363,7 +394,7 @@ export default function AdminView({ onExit }: { onExit: () => void }) {
                             </div>
 
                             <div className="grid gap-4">
-                                {data.thoughts.map((thought: any) => (
+                                {data.thoughts.map((thought: Thought) => (
                                     <div
                                         key={thought.id}
                                         className="bg-slate-900 border border-slate-800 p-6 rounded-lg hover:border-indigo-500/30 transition-colors"
@@ -416,7 +447,7 @@ export default function AdminView({ onExit }: { onExit: () => void }) {
                             </div>
 
                             <div className="grid gap-4">
-                                {data.swaps.map((swap: any) => (
+                                {data.swaps.map((swap: Swap) => (
                                     <div
                                         key={swap.id}
                                         className="bg-slate-900 border border-slate-800 p-4 rounded-lg hover:border-indigo-500/30 transition-colors"
@@ -480,7 +511,7 @@ export default function AdminView({ onExit }: { onExit: () => void }) {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-800">
-                                        {data.logs.map((log: any) => (
+                                        {data.logs.map((log: Log) => (
                                             <tr
                                                 key={log.id}
                                                 className="hover:bg-slate-900/50 transition-colors"

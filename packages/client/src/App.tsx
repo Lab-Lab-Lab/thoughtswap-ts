@@ -7,7 +7,7 @@
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { socket } from './socket';
 import StudentView from './components/StudentView';
 import TeacherView from './components/TeacherView';
@@ -64,25 +64,39 @@ function App() {
         }
     };
 
-    useEffect(() => {
-        if (window.location.pathname === '/auth/success') {
-            const params = new URLSearchParams(window.location.search);
-            const name = params.get('name');
-            const role = params.get('role') as UserRole;
-            const email = params.get('email');
-
-            if (name && role && email) {
-                updateAuth({
-                    isLoggedIn: true,
-                    name: decodeURIComponent(name),
-                    email: decodeURIComponent(email),
-                    role: role,
-                    expiry: Date.now() + SESSION_DURATION,
-                });
-            }
-            window.history.replaceState({}, document.title, '/');
+    const checkTour = useCallback(() => {
+        const tourDone = localStorage.getItem('thoughtswap_tour_completed');
+        if (!tourDone && authState.isLoggedIn) {
+            setShowTour(true);
         }
+    }, [authState.isLoggedIn]);
 
+    useEffect(() => {
+        // Only run auth success handling on first mount
+        const handleAuthSuccess = () => {
+            if (window.location.pathname === '/auth/success') {
+                const params = new URLSearchParams(window.location.search);
+                const name = params.get('name');
+                const role = params.get('role') as UserRole;
+                const email = params.get('email');
+
+                if (name && role && email) {
+                    updateAuth({
+                        isLoggedIn: true,
+                        name: decodeURIComponent(name),
+                        email: decodeURIComponent(email),
+                        role: role,
+                        expiry: Date.now() + SESSION_DURATION,
+                    });
+                }
+                window.history.replaceState({}, document.title, '/');
+            }
+        };
+
+        handleAuthSuccess();
+    }, []);
+
+    useEffect(() => {
         const handleAuthError = () => {
             setAuthErrorModal(true);
             updateAuth({ isLoggedIn: false, name: null, email: null, role: null });
@@ -111,7 +125,7 @@ function App() {
             socket.off('AUTH_ERROR', handleAuthError);
             socket.off('CONSENT_STATUS', handleConsentStatus);
         };
-    }, [authState.role]);
+    }, [authState.role, checkTour]);
 
     useEffect(() => {
         if (authState.isLoggedIn && !socket.connected) {
@@ -123,13 +137,6 @@ function App() {
             socket.connect();
         }
     }, [authState]);
-
-    const checkTour = () => {
-        const tourDone = localStorage.getItem('thoughtswap_tour_completed');
-        if (!tourDone && authState.isLoggedIn) {
-            setShowTour(true);
-        }
-    };
 
     const handleConsentResponse = (gaveConsent: boolean) => {
         socket.emit('UPDATE_CONSENT', { consentGiven: gaveConsent });
@@ -184,7 +191,7 @@ function App() {
 
     // Handle tab/window close
     useEffect(() => {
-        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+        const handleBeforeUnload = () => {
             if (authState.role === 'TEACHER' && authState.isLoggedIn) {
                 const activeJoinCode = localStorage.getItem('thoughtswap_joinCode');
                 const activeTeacher = localStorage.getItem('thoughtswap_teacher_active');

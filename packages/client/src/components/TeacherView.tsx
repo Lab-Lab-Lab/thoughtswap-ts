@@ -51,6 +51,27 @@ interface DistributionItem {
     originalAuthorName: string;
 }
 
+interface PreviousSession {
+    id: string;
+    joinCode: string;
+    createdAt: string;
+    participantCount: number;
+    title?: string;
+    promptCount?: number;
+    swapCount?: number;
+}
+
+interface HandleDataPayload {
+    joinCode: string;
+    maxSwapRequests?: number;
+}
+
+interface PromptPayload {
+    content: string;
+    type: 'TEXT' | 'MC' | 'SCALE';
+    options?: string[];
+}
+
 export default function TeacherView({ auth }: TeacherViewProps) {
     const [isActive, setIsActive] = useState(false);
     const [joinCode, setJoinCode] = useState('');
@@ -73,7 +94,7 @@ export default function TeacherView({ auth }: TeacherViewProps) {
     const [showBank, setShowBank] = useState(false);
 
     // Previous Sessions State
-    const [previousSessions, setPreviousSessions] = useState<any[]>([]);
+    const [previousSessions, setPreviousSessions] = useState<PreviousSession[]>([]);
     const [showPreviousSessions, setShowPreviousSessions] = useState(false);
 
     // Modal State
@@ -92,6 +113,17 @@ export default function TeacherView({ auth }: TeacherViewProps) {
         message: '',
     });
 
+    const showModal = (
+        type: ModalType,
+        title: string,
+        message: string,
+        onConfirm?: () => void,
+        children?: React.ReactNode,
+        isDestructive?: boolean
+    ) => {
+        setModal({ isOpen: true, type, title, message, onConfirm, children, isDestructive });
+    };
+
     useEffect(() => {
         const storedJoinCode = localStorage.getItem('thoughtswap_joinCode');
         const storedIsTeacherActive = localStorage.getItem('thoughtswap_teacher_active');
@@ -109,7 +141,7 @@ export default function TeacherView({ auth }: TeacherViewProps) {
 
         socket.emit('GET_SAVED_PROMPTS');
 
-        socket.on('CLASS_STARTED', (data) => {
+        socket.on('CLASS_STARTED', (data: HandleDataPayload) => {
             setIsActive(true);
             setJoinCode(data.joinCode);
             setMaxSwapRequests(data.maxSwapRequests || 1);
@@ -122,23 +154,25 @@ export default function TeacherView({ auth }: TeacherViewProps) {
             setSubmissionCount(data.submissionCount);
         });
 
-        socket.on('THOUGHTS_UPDATE', (data) => {
+        socket.on('THOUGHTS_UPDATE', (data: Thought[]) => {
             setLiveThoughts(data);
             if (data.length > 0 && !promptSent) setPromptSent(true);
         });
 
-        socket.on('DISTRIBUTION_UPDATE', (data) => setDistribution(data));
+        socket.on('DISTRIBUTION_UPDATE', (data: Record<string, DistributionItem>) =>
+            setDistribution(data)
+        );
 
         socket.on('SWAP_COMPLETED', () => {
             setSwapComplete(true);
             showModal('success', 'Swap Successful', 'Thoughts have been distributed.');
         });
 
-        socket.on('SAVED_PROMPTS_LIST', (data) => setSavedPrompts(data));
+        socket.on('SAVED_PROMPTS_LIST', (data: SavedPrompt[]) => setSavedPrompts(data));
 
-        socket.on('PREVIOUS_SESSIONS', (data) => setPreviousSessions(data));
+        socket.on('PREVIOUS_SESSIONS', (data: PreviousSession[]) => setPreviousSessions(data));
 
-        socket.on('ERROR', (data) => {
+        socket.on('ERROR', (data: { message: string }) => {
             showModal('error', 'Error', data.message);
             if (data.message.includes('ended') || data.message.includes('Invalid')) {
                 localStorage.removeItem('thoughtswap_joinCode');
@@ -160,18 +194,7 @@ export default function TeacherView({ auth }: TeacherViewProps) {
             socket.off('PREVIOUS_SESSIONS');
             socket.off('ERROR');
         };
-    }, [auth]);
-
-    const showModal = (
-        type: ModalType,
-        title: string,
-        message: string,
-        onConfirm?: () => void,
-        children?: React.ReactNode,
-        isDestructive?: boolean
-    ) => {
-        setModal({ isOpen: true, type, title, message, onConfirm, children, isDestructive });
-    };
+    }, [auth, promptSent]);
 
     const getPromptData = () => ({
         content: promptInput,
@@ -199,7 +222,7 @@ export default function TeacherView({ auth }: TeacherViewProps) {
         setDistribution({});
     };
 
-    const handleSaveToBank = (data?: any) => {
+    const handleSaveToBank = (data?: PromptPayload) => {
         const payload = data || getPromptData();
         if (!payload.content.trim())
             return showModal('error', 'Invalid Prompt', 'Prompt content is required.');
@@ -391,7 +414,7 @@ export default function TeacherView({ auth }: TeacherViewProps) {
                             </p>
                         ) : showPreviousSessions ? (
                             <div className="space-y-3 max-h-96 overflow-y-auto">
-                                {previousSessions.map((session: any) => (
+                                {previousSessions.map((session: PreviousSession) => (
                                     <div
                                         key={session.id}
                                         className="p-3 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition"
@@ -399,11 +422,11 @@ export default function TeacherView({ auth }: TeacherViewProps) {
                                         <div className="flex justify-between items-start gap-2">
                                             <div className="flex-1 min-w-0">
                                                 <p className="text-sm font-semibold text-gray-800 truncate">
-                                                    {session.title}
+                                                    {session.title || `Room ${session.joinCode}`}
                                                 </p>
                                                 <p className="text-xs text-gray-500">
-                                                    {session.promptCount} prompts •{' '}
-                                                    {session.swapCount} swaps
+                                                    {session.promptCount || 0} prompts •{' '}
+                                                    {session.swapCount || 0} swaps
                                                 </p>
                                             </div>
                                         </div>

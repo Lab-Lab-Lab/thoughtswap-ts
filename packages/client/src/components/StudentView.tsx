@@ -7,7 +7,7 @@
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { socket } from '../socket';
 import {
     Loader2,
@@ -23,13 +23,46 @@ import Modal from './Modal';
 import type { ModalType } from './Modal';
 import StudentResponseInput from './StudentResponseInput';
 
+interface AuthData {
+    name: string | null;
+    email: string | null;
+    role: string | null;
+}
+
 interface StudentViewProps {
     joinCode: string;
-    auth: any;
+    auth: AuthData;
     onJoin: (code: string) => void;
 }
 
 type Status = 'IDLE' | 'JOINED' | 'ANSWERING' | 'SUBMITTED' | 'DISCUSSING';
+
+interface NewPromptData {
+    content: string;
+    promptUseId: string;
+    type?: 'TEXT' | 'MC' | 'SCALE';
+    options?: string[];
+}
+
+interface ReceiveSwapData {
+    content: string;
+}
+
+interface ThoughtDeletedData {
+    message: string;
+}
+
+interface SessionEndedData {
+    surveyLink?: string;
+}
+
+interface RestoreStateData {
+    prompt: string;
+    promptUseId: string;
+    type?: 'TEXT' | 'MC' | 'SCALE';
+    options?: string[];
+    status: Status;
+}
 
 export default function StudentView({ joinCode, auth, onJoin }: StudentViewProps) {
     const [status, setStatus] = useState<Status>('IDLE');
@@ -55,16 +88,31 @@ export default function StudentView({ joinCode, auth, onJoin }: StudentViewProps
         children?: React.ReactNode;
     }>({ isOpen: false, type: 'info', title: '', message: '' });
 
+    const sendNotification = useCallback(
+        (title: string, body: string) => {
+            if (notificationsEnabled && document.hidden) {
+                new Notification(title, { body, icon: '/vite.svg' });
+            }
+        },
+        [notificationsEnabled]
+    );
+
+    const requestNotificationPermission = () => {
+        if (!('Notification' in window)) return;
+        Notification.requestPermission().then((permission) => {
+            setNotificationsEnabled(permission === 'granted');
+        });
+    };
+
     useEffect(() => {
         const storedJoinCode = localStorage.getItem('thoughtswap_joinCode');
-        if (storedJoinCode && status === 'IDLE') {
-            setInputCode(storedJoinCode);
+        if (storedJoinCode && status === 'IDLE' && inputCode !== storedJoinCode) {
             onJoin(storedJoinCode);
             if (!socket.auth) socket.auth = { name: auth.name, role: auth.role, email: auth.email };
             if (!socket.connected) socket.connect();
             socket.emit('JOIN_ROOM', { joinCode: storedJoinCode });
         }
-    }, [auth, status]);
+    }, [auth, status, onJoin, inputCode]);
 
     useEffect(() => {
         if (auth && !socket.auth)
@@ -84,7 +132,7 @@ export default function StudentView({ joinCode, auth, onJoin }: StudentViewProps
             }
         };
 
-        const handleRestore = (data: any) => {
+        const handleRestore = (data: RestoreStateData) => {
             setPrompt(data.prompt);
             setPromptUseId(data.promptUseId);
             setPromptType(data.type || 'TEXT');
@@ -92,7 +140,7 @@ export default function StudentView({ joinCode, auth, onJoin }: StudentViewProps
             setStatus(data.status);
         };
 
-        const handleNewPrompt = (data: any) => {
+        const handleNewPrompt = (data: NewPromptData) => {
             setPrompt(data.content);
             setPromptUseId(data.promptUseId);
             setPromptType(data.type || 'TEXT');
@@ -103,7 +151,7 @@ export default function StudentView({ joinCode, auth, onJoin }: StudentViewProps
             sendNotification('New Prompt!', 'The teacher has sent a new prompt.');
         };
 
-        const handleReceiveSwap = (data: { content: string }) => {
+        const handleReceiveSwap = (data: ReceiveSwapData) => {
             setSwappedThought(data.content);
             setStatus('DISCUSSING');
             sendNotification(
@@ -112,7 +160,7 @@ export default function StudentView({ joinCode, auth, onJoin }: StudentViewProps
             );
         };
 
-        const handleThoughtDeleted = (data: { message: string }) => {
+        const handleThoughtDeleted = (data: ThoughtDeletedData) => {
             setModal({
                 isOpen: true,
                 type: 'warning',
@@ -123,7 +171,7 @@ export default function StudentView({ joinCode, auth, onJoin }: StudentViewProps
             setResponseInput('');
         };
 
-        const handleSessionEnded = (data: { surveyLink?: string }) => {
+        const handleSessionEnded = (data: SessionEndedData) => {
             setStatus('IDLE');
             setInputCode('');
             setPrompt('');
@@ -180,20 +228,7 @@ export default function StudentView({ joinCode, auth, onJoin }: StudentViewProps
             socket.off('SESSION_ENDED', handleSessionEnded);
             socket.off('RESET_CLIENT_STATE', handleResetState);
         };
-    }, [status, auth]);
-
-    const requestNotificationPermission = () => {
-        if (!('Notification' in window)) return;
-        Notification.requestPermission().then((permission) => {
-            setNotificationsEnabled(permission === 'granted');
-        });
-    };
-
-    const sendNotification = (title: string, body: string) => {
-        if (notificationsEnabled && document.hidden) {
-            new Notification(title, { body, icon: '/vite.svg' });
-        }
-    };
+    }, [status, auth, sendNotification]);
 
     const handleJoinClick = () => {
         if (inputCode.length > 0) {

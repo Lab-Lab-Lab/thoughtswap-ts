@@ -40,12 +40,12 @@ export default function TeacherPromptBank({
     isIdle,
     onSaveNew,
 }: TeacherPromptBankProps) {
-    if (!isOpen) return null;
-
     // Local state for the "Quick Create" form in idle mode
     const [newContent, setNewContent] = useState('');
     const [newType, setNewType] = useState<'TEXT' | 'MC' | 'SCALE'>('TEXT');
     const [newOptions, setNewOptions] = useState(['', '']);
+
+    if (!isOpen) return null;
 
     const handleSave = () => {
         if (!newContent.trim()) return;
