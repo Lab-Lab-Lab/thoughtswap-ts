@@ -217,7 +217,20 @@ router.get('/callback', async (req: Request, res: Response) => {
             const teacherEnrollments = enrollments.filter(
                 (e: CanvasEnrollment) => e.course_id === course.id && e.type === 'TeacherEnrollment'
             );
-            const isTeacher = teacherEnrollments.length > 0;
+
+            // Check both the global enrollments list and the course's own enrollments list
+            const courseEnrollments = (course as any).enrollments || [];
+            const isTeacherInCourse = courseEnrollments.some(
+                (e: any) =>
+                    e.type === 'teacher' ||
+                    e.role === 'TeacherEnrollment' ||
+                    e.type === 'TeacherEnrollment'
+            );
+
+            const isTeacher = teacherEnrollments.length > 0 || isTeacherInCourse;
+            console.log(
+                `Course ${courseTitle} (ID: ${course.id}) - isTeacher: ${isTeacher} - teacher enrollments len: ${teacherEnrollments.length} total user enrollments len: ${enrollments.length}`
+            );
 
             let semester = 'Unknown';
             if (course.enrollment_term_id && course.root_account_id) {
@@ -249,13 +262,22 @@ router.get('/callback', async (req: Request, res: Response) => {
             });
 
             // Add user to appropriate enrollment lists
+            const isStudentInCourse = courseEnrollments.some(
+                (e: any) =>
+                    e.type === 'student' ||
+                    e.role === 'StudentEnrollment' ||
+                    e.type === 'StudentEnrollment' ||
+                    e.type === 'ta' ||
+                    e.role === 'TaEnrollment'
+            );
+
             if (isTeacher) {
                 // If user is a teacher, update course teacher (only one teacher per course model)
                 await prisma.course.update({
                     where: { id: courseRecord.id },
                     data: { teacherId: localUser.id },
                 });
-            } else if (studentEnrollments.length > 0) {
+            } else if (studentEnrollments.length > 0 || isStudentInCourse) {
                 // Add to students list
                 await prisma.course.update({
                     where: { id: courseRecord.id },
