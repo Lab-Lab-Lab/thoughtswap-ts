@@ -105,6 +105,7 @@ router.get('/', async (req: Request, res: Response) => {
                             canvasCourse.enrollment_term_id,
                             user.accessToken
                         );
+                        console.log(semester);
                         // Update the course in the database with the fetched semester
                         await prisma.course.update({
                             where: { id: course.id },

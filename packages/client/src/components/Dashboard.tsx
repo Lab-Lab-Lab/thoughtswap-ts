@@ -8,7 +8,7 @@
  * (at your option) any later version.
  */
 import { useEffect, useState } from 'react';
-import { BookOpen, LogOut, Zap, RefreshCw, GraduationCap, Users } from 'lucide-react';
+import { BookOpen, LogOut, Zap, RefreshCw, GraduationCap, Users, CloudCog } from 'lucide-react';
 import ClassCard from './ClassCard';
 
 interface Course {
@@ -53,6 +53,8 @@ export default function Dashboard({
                     email: userEmail || '',
                 },
             });
+
+            console.log(response);
 
             if (!response.ok) {
                 throw new Error('Failed to fetch courses');

@@ -25,6 +25,7 @@ const REQUIRED_SCOPES = [
     'url:GET|/api/v1/users/:user_id/enrollments',
     'url:GET|/api/v1/courses/:course_id/sections',
     'url:GET|/api/v1/users/:user_id/profile',
+    'url:GET|/api/v1/courses',
 ].join(' ');
 
 // Configuration Constants from .env
@@ -52,9 +53,10 @@ interface CanvasEnrollment {
 
 interface CanvasCourse {
     id: number;
-    name: string;
-    course_code: string;
-    created_at: string;
+    name?: string;
+    original_name?: string;
+    course_code?: string;
+    created_at?: string;
 }
 
 const fetchUserCourses = async (userId: string, accessToken: string): Promise<CanvasCourse[]> => {
@@ -170,6 +172,13 @@ router.get('/callback', async (req: Request, res: Response) => {
 
         // Step 5: Sync enrollments - create or update Course records and link them
         for (const course of courses) {
+            const courseTitle = course.name || course.original_name || course.course_code;
+
+            // Skip courses that don't have any recognizable name (often restricted or inaccessible courses)
+            if (!courseTitle) {
+                continue;
+            }
+
             // Determine if user is a teacher in this course
             const studentEnrollments = enrollments.filter(
                 (e: CanvasEnrollment) => e.course_id === course.id && e.type === 'StudentEnrollment'
@@ -183,11 +192,11 @@ router.get('/callback', async (req: Request, res: Response) => {
             const courseRecord = await prisma.course.upsert({
                 where: { canvasId: String(course.id) },
                 update: {
-                    title: course.name,
+                    title: String(courseTitle),
                 },
                 create: {
                     canvasId: String(course.id),
-                    title: course.name,
+                    title: String(courseTitle),
                     joinCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
                     teacherId: isTeacher ? localUser.id : localUser.id, // Teachers will be properly assigned
                 },
