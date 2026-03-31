@@ -47,8 +47,8 @@ model Course {
   canvasId  String?   @unique
   semester  String?   @default("Unknown")
   isActive  Boolean   @default(false)
-  teacherId String
-  teacher   User      @relation("TeacherEnrollment", fields: [teacherId], references: [id])
+  teacherId String?
+  teacher   User?     @relation("TeacherEnrollment", fields: [teacherId], references: [id])
   students  User[]    @relation("StudentEnrollment")
   sessions  Session[]
 
