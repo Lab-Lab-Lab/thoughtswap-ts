@@ -19,6 +19,7 @@ const router = Router();
 
 const REQUIRED_SCOPES = [
     'url:GET|/api/v1/accounts/:account_id/terms',
+    'url:GET|/api/v1/accounts/:account_id/terms/:id',
     'url:GET|/api/v1/courses/:course_id/enrollments',
     'url:GET|/api/v1/sections/:section_id/enrollments',
     'url:GET|/api/v1/users/:user_id/enrollments',
@@ -26,7 +27,7 @@ const REQUIRED_SCOPES = [
     'url:GET|/api/v1/users/:user_id/profile',
 ].join(' ');
 
-// 1. Configuration Constants from .env
+// Configuration Constants from .env
 const {
     FRONTEND_URL,
     CANVAS_CLIENT_ID,
@@ -39,21 +40,51 @@ if (!CANVAS_CLIENT_ID || !CANVAS_CLIENT_SECRET || !CANVAS_BASE_URL || !CANVAS_RE
     throw new Error('Missing one or more Canvas OAuth environment variables.');
 }
 
-const determineRole = async (
+// Type definitions
+interface CanvasEnrollment {
+    id: number;
+    user_id: number;
+    course_id: number;
+    type: string;
+    role: string;
+    enrollment_state: string;
+}
+
+interface CanvasCourse {
+    id: number;
+    name: string;
+    course_code: string;
+    created_at: string;
+}
+
+const fetchUserCourses = async (userId: string, accessToken: string): Promise<CanvasCourse[]> => {
+    try {
+        const coursesResponse = await axios.get(`${CANVAS_BASE_URL}/api/v1/courses`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        return coursesResponse.data || [];
+    } catch (error) {
+        console.error('Error fetching Canvas courses:', error);
+        return [];
+    }
+};
+
+const fetchUserEnrollments = async (
     userId: string,
     accessToken: string
-): Promise<'TEACHER' | 'STUDENT' | 'OTHER'> => {
-    const enrollmentsResponse = await axios.get(
-        `${CANVAS_BASE_URL}/api/v1/users/${userId}/enrollments`,
-        {
-            headers: { Authorization: `Bearer ${accessToken}` },
-        }
-    );
-    const enrollments = enrollmentsResponse.data;
-    const roles = enrollments.map((e: any) => e.type);
-    if (roles.includes('TeacherEnrollment')) return 'TEACHER';
-    if (roles.includes('StudentEnrollment')) return 'STUDENT';
-    return 'OTHER';
+): Promise<CanvasEnrollment[]> => {
+    try {
+        const enrollmentsResponse = await axios.get(
+            `${CANVAS_BASE_URL}/api/v1/users/${userId}/enrollments`,
+            {
+                headers: { Authorization: `Bearer ${accessToken}` },
+            }
+        );
+        return enrollmentsResponse.data || [];
+    } catch (error) {
+        console.error('Error fetching Canvas enrollments:', error);
+        return [];
+    }
 };
 
 router.get('/', (req: Request, res: Response) => {
@@ -87,7 +118,7 @@ router.get('/callback', async (req: Request, res: Response) => {
     }
 
     try {
-        // Step 3: Exchange the code for the Access Token
+        // Step 1: Exchange the code for the Access Token
         const tokenResponse = await axios.post(
             `${CANVAS_BASE_URL}/login/oauth2/token`,
             {
@@ -102,10 +133,9 @@ router.get('/callback', async (req: Request, res: Response) => {
             }
         );
 
-        // The Canvas response includes user ID, token, refresh token, and expiration
         const { access_token, refresh_token, user } = tokenResponse.data;
 
-        // Step 4: Use Access Token to get User Profile (needed for email)
+        // Step 2: Get User Profile
         const profileResponse = await axios.get(`${CANVAS_BASE_URL}/api/v1/users/self/profile`, {
             headers: { Authorization: `Bearer ${access_token}` },
         });
@@ -116,9 +146,7 @@ router.get('/callback', async (req: Request, res: Response) => {
             throw new Error('Missing primary email or user ID from Canvas profile.');
         }
 
-        // Step 5: Upsert User into PostgreSQL
-        const role = await determineRole(user.id, access_token);
-
+        // Step 3: Upsert User into PostgreSQL (without role field)
         const localUser = await prisma.user.upsert({
             where: { canvasId: String(user.id) },
             update: {
@@ -126,7 +154,6 @@ router.get('/callback', async (req: Request, res: Response) => {
                 email: userEmail,
                 accessToken: access_token,
                 refreshToken: refresh_token,
-                role: role,
             },
             create: {
                 canvasId: String(user.id),
@@ -134,12 +161,60 @@ router.get('/callback', async (req: Request, res: Response) => {
                 email: userEmail,
                 accessToken: access_token,
                 refreshToken: refresh_token,
-                role: role,
             },
         });
 
+        // Step 4: Fetch user enrollments and courses to sync enrollments
+        const enrollments = await fetchUserEnrollments(String(user.id), access_token);
+        const courses = await fetchUserCourses(String(user.id), access_token);
+
+        // Step 5: Sync enrollments - create or update Course records and link them
+        for (const course of courses) {
+            // Determine if user is a teacher in this course
+            const studentEnrollments = enrollments.filter(
+                (e: CanvasEnrollment) => e.course_id === course.id && e.type === 'StudentEnrollment'
+            );
+            const teacherEnrollments = enrollments.filter(
+                (e: CanvasEnrollment) => e.course_id === course.id && e.type === 'TeacherEnrollment'
+            );
+            const isTeacher = teacherEnrollments.length > 0;
+
+            // Upsert course (linked by Canvas course ID)
+            const courseRecord = await prisma.course.upsert({
+                where: { canvasId: String(course.id) },
+                update: {
+                    title: course.name,
+                },
+                create: {
+                    canvasId: String(course.id),
+                    title: course.name,
+                    joinCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
+                    teacherId: isTeacher ? localUser.id : localUser.id, // Teachers will be properly assigned
+                },
+            });
+
+            // Add user to appropriate enrollment lists
+            if (isTeacher) {
+                // If user is a teacher, update course teacher (only one teacher per course model)
+                await prisma.course.update({
+                    where: { id: courseRecord.id },
+                    data: { teacherId: localUser.id },
+                });
+            } else if (studentEnrollments.length > 0) {
+                // Add to students list
+                await prisma.course.update({
+                    where: { id: courseRecord.id },
+                    data: {
+                        students: {
+                            connect: { id: localUser.id },
+                        },
+                    },
+                });
+            }
+        }
+
         // Final Redirect back to the frontend
-        const frontendRedirect = `${FRONTEND_URL}/auth/success?name=${encodeURIComponent(localUser.name)}&role=${localUser.role}&email=${encodeURIComponent(localUser.email)}`;
+        const frontendRedirect = `${FRONTEND_URL}/auth/success?name=${encodeURIComponent(localUser.name)}&email=${encodeURIComponent(localUser.email)}`;
 
         return res.redirect(frontendRedirect);
     } catch (error) {

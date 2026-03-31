@@ -12,7 +12,6 @@ model User {
   canvasId     String   @unique
   name         String
   email        String   @unique
-  role         String   @default("STUDENT") // STUDENT, TEACHER, or ADMIN
   accessToken  String
   refreshToken String?
   
@@ -20,8 +19,11 @@ model User {
   consentDate  DateTime?
 
   thoughts     Thought[] 
-  savedPrompts SavedPrompt[] // Relation to saved prompts
+  savedPrompts SavedPrompt[]
   swapRequests SwapRequest[]
+  
+  enrollments Course[] @relation("StudentEnrollment")
+  teacherEnrollments Course[] @relation("TeacherEnrollment")
 
   @@map("users")
 }
@@ -29,8 +31,8 @@ model User {
 model SavedPrompt {
   id        String   @id @default(uuid())
   content   String
-  type      String   @default("TEXT") // TEXT, MC, SCALE
-  options   Json?    // Stores options for MC as an array of strings
+  type      String   @default("TEXT")
+  options   Json?
   teacherId String
   teacher   User     @relation(fields: [teacherId], references: [id])
   createdAt DateTime @default(now())
@@ -42,7 +44,12 @@ model Course {
   id        String    @id @default(uuid())
   joinCode  String    @unique
   title     String
-  teacherId String    
+  canvasId  String?   @unique
+  semester  String?   @default("Unknown")
+  isActive  Boolean   @default(false)
+  teacherId String
+  teacher   User      @relation("TeacherEnrollment", fields: [teacherId], references: [id])
+  students  User[]    @relation("StudentEnrollment")
   sessions  Session[]
 
   @@map("courses")
@@ -52,8 +59,8 @@ model Session {
   id              String      @id @default(uuid())
   courseId        String
   course          Course      @relation(fields: [courseId], references: [id])
-  status          String      @default("ACTIVE") // ACTIVE, SWAPPING, COMPLETED
-  maxSwapRequests Int         @default(1)        // Configurable limit for swap requests
+  status          String      @default("ACTIVE")
+  maxSwapRequests Int         @default(1)
   prompts         PromptUse[]
   swapRequests    SwapRequest[]
 }
@@ -72,7 +79,7 @@ model SwapRequest {
 model PromptUse {
   id        String    @id @default(uuid())
   content   String
-  type      String    @default("TEXT") // TEXT, MC, SCALE
+  type      String    @default("TEXT")
   options   Json?
   sessionId String
   session   Session   @relation(fields: [sessionId], references: [id])

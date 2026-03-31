@@ -13,6 +13,7 @@ import { Server, Socket } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { authRouter } from './auth.router.js';
+import { coursesRouter } from './courses.router.js';
 import { PrismaClient } from '@prisma/client';
 
 dotenv.config();
@@ -25,6 +26,7 @@ app.use(cors());
 app.use(express.json());
 
 app.use('/accounts/canvas/login', authRouter);
+app.use('/api/courses', coursesRouter);
 
 // --- Logging Helper ---
 async function logEvent(event: string, userId: string | null, payload: any) {
@@ -92,21 +94,28 @@ const roomAssignments: Record<string, Record<string, any>> = {};
 
 async function broadcastParticipantList(joinCode: string, activePromptUseId: string | null) {
     const sockets = await io.in(joinCode).fetchSockets();
-    const students = sockets.filter((s) => s.handshake.auth.role === 'STUDENT');
+
+    // Get the course to identify the teacher
+    const course = await prisma.course.findUnique({ where: { joinCode } });
+    if (!course) return;
 
     const submissions = activePromptUseId
         ? await prisma.thought.findMany({ where: { promptUseId: activePromptUseId } })
         : [];
 
-    const participantList = students.map((s) => {
-        return {
-            socketId: s.id,
-            name: s.handshake.auth.name || 'Anonymous',
-            hasSubmitted: false,
-        };
-    });
+    // Build participant list from non-teacher sockets
+    const participantList = sockets
+        .filter((s) => s.data.userId !== course.teacherId) // Exclude teacher
+        .map((s) => {
+            return {
+                socketId: s.id,
+                name: s.data.userName || 'Anonymous',
+                hasSubmitted: submissions.some((sub) => sub.authorId === s.data.userId),
+            };
+        });
 
-    const teacherSockets = sockets.filter((s) => s.handshake.auth.role === 'TEACHER');
+    // Send updates to teacher sockets
+    const teacherSockets = sockets.filter((s) => s.data.userId === course.teacherId);
     teacherSockets.forEach((t) => {
         t.emit('PARTICIPANTS_UPDATE', {
             participants: participantList,
@@ -131,9 +140,12 @@ async function broadcastThoughtsList(joinCode: string, promptUseId: string) {
         authorId: t.authorId,
     }));
 
-    const teacherSockets = (await io.in(joinCode).fetchSockets()).filter(
-        (s) => s.handshake.auth.role === 'TEACHER'
-    );
+    // Get the course to identify the teacher
+    const course = await prisma.course.findUnique({ where: { joinCode } });
+    if (!course) return;
+
+    const sockets = await io.in(joinCode).fetchSockets();
+    const teacherSockets = sockets.filter((s) => s.data.userId === course.teacherId);
     teacherSockets.forEach((t) => {
         t.emit('THOUGHTS_UPDATE', thoughtData);
     });
@@ -148,26 +160,12 @@ const io = new Server(httpServer, {
 });
 
 io.on('connection', (socket: Socket) => {
-    const { email, name, role } = socket.handshake.auth;
+    const { email, name } = socket.handshake.auth;
 
     const userPromise = (async () => {
         if (!email) return null;
         try {
-            if (email.startsWith('guest_')) {
-                return await prisma.user.upsert({
-                    where: { email },
-                    update: { name, role },
-                    create: {
-                        email,
-                        name,
-                        role,
-                        canvasId: `guest-${Math.random().toString(36).substring(7)}`,
-                        accessToken: 'guest-token',
-                    },
-                });
-            } else {
-                return await prisma.user.findUnique({ where: { email } });
-            }
+            return await prisma.user.findUnique({ where: { email } });
         } catch (e) {
             console.error('User load error', e);
             return null;
@@ -185,7 +183,7 @@ io.on('connection', (socket: Socket) => {
                 consentGiven: user.consentGiven,
                 consentDate: user.consentDate,
             });
-            logEvent('USER_CONNECT', user.id, { socketId: socket.id, role });
+            logEvent('USER_CONNECT', user.id, { socketId: socket.id });
         }
     });
 
@@ -203,7 +201,7 @@ io.on('connection', (socket: Socket) => {
     // --- PROMPT BANK CRUD ---
     socket.on('GET_SAVED_PROMPTS', async () => {
         const user = await userPromise;
-        if (!user || role !== 'TEACHER') return;
+        if (!user) return;
         const prompts = await prisma.savedPrompt.findMany({
             where: { teacherId: user.id },
             orderBy: { createdAt: 'desc' },
@@ -213,9 +211,8 @@ io.on('connection', (socket: Socket) => {
 
     socket.on('SAVE_PROMPT', async (data) => {
         const user = await userPromise;
-        if (!user || role !== 'TEACHER') return;
+        if (!user) return;
 
-        // Data can have type and options now
         const { content, type = 'TEXT', options = [] } = data;
 
         await prisma.savedPrompt.create({
@@ -236,7 +233,7 @@ io.on('connection', (socket: Socket) => {
 
     socket.on('DELETE_SAVED_PROMPT', async ({ id }) => {
         const user = await userPromise;
-        if (!user || role !== 'TEACHER') return;
+        if (!user) return;
         try {
             const prompt = await prisma.savedPrompt.findUnique({ where: { id } });
             if (prompt && prompt.teacherId === user.id) {
@@ -255,7 +252,7 @@ io.on('connection', (socket: Socket) => {
     // --- CLASS MANAGEMENT ---
     socket.on('TEACHER_START_CLASS', async () => {
         const user = await userPromise;
-        if (!user || role !== 'TEACHER') return;
+        if (!user) return;
 
         let joinCode = generateRoomCode();
         let attempts = 0;
@@ -266,7 +263,7 @@ io.on('connection', (socket: Socket) => {
 
         const course = await prisma.course.create({
             data: {
-                title: `${name}'s Class ${new Date().toLocaleDateString()}`,
+                title: `${user.name}'s Class ${new Date().toLocaleDateString()}`,
                 joinCode: joinCode,
                 teacherId: user.id,
             },
@@ -294,9 +291,9 @@ io.on('connection', (socket: Socket) => {
 
     socket.on('UPDATE_SESSION_SETTINGS', async ({ joinCode, maxSwapRequests }) => {
         const user = await userPromise;
-        if (!user || role !== 'TEACHER') return;
+        if (!user) return;
         const course = await prisma.course.findUnique({ where: { joinCode } });
-        if (!course) return;
+        if (!course || course.teacherId !== user.id) return;
         const session = await prisma.session.findFirst({
             where: { courseId: course.id, status: 'ACTIVE' },
         });
@@ -311,7 +308,7 @@ io.on('connection', (socket: Socket) => {
 
     socket.on('TEACHER_REJOIN', async ({ joinCode }) => {
         const user = await userPromise;
-        if (!user || role !== 'TEACHER') return;
+        if (!user) return;
 
         const course = await prisma.course.findUnique({ where: { joinCode } });
         if (!course || course.teacherId !== user.id) {
@@ -359,10 +356,10 @@ io.on('connection', (socket: Socket) => {
     // Handle teacher resetting for a new prompt
     socket.on('TEACHER_RESET_STATE', async ({ joinCode }) => {
         const user = await userPromise;
-        if (!user || role !== 'TEACHER') return;
+        if (!user) return;
 
         const course = await prisma.course.findUnique({ where: { joinCode } });
-        if (!course) return;
+        if (!course || course.teacherId !== user.id) return;
 
         // Reset assignments for the next round
         if (roomAssignments[joinCode]) roomAssignments[joinCode] = {};
@@ -446,13 +443,12 @@ io.on('connection', (socket: Socket) => {
 
     socket.on('TEACHER_SEND_PROMPT', async (data) => {
         const user = await userPromise;
-        if (!user || role !== 'TEACHER') return;
+        if (!user) return;
 
-        // Extract type and options, default to TEXT
         const { joinCode, content, type = 'TEXT', options = [] } = data;
 
         const course = await prisma.course.findUnique({ where: { joinCode } });
-        if (!course) return;
+        if (!course || course.teacherId !== user.id) return;
 
         const session = await prisma.session.findFirst({
             where: { courseId: course.id, status: 'ACTIVE' },
@@ -505,7 +501,11 @@ io.on('connection', (socket: Socket) => {
 
     socket.on('TEACHER_DELETE_THOUGHT', async ({ joinCode, thoughtId }) => {
         const user = await userPromise;
-        if (!user || role !== 'TEACHER') return;
+        if (!user) return;
+
+        const course = await prisma.course.findUnique({ where: { joinCode } });
+        if (!course || course.teacherId !== user.id) return;
+
         try {
             const thought = await prisma.thought.findUnique({
                 where: { id: thoughtId },
@@ -535,10 +535,10 @@ io.on('connection', (socket: Socket) => {
 
     socket.on('TRIGGER_SWAP', async ({ joinCode }) => {
         const user = await userPromise;
-        if (!user || role !== 'TEACHER') return;
+        if (!user) return;
 
         const course = await prisma.course.findUnique({ where: { joinCode } });
-        if (!course) return;
+        if (!course || course.teacherId !== user.id) return;
 
         const session = await prisma.session.findFirst({
             where: { courseId: course.id, status: 'ACTIVE' },
@@ -560,7 +560,7 @@ io.on('connection', (socket: Socket) => {
         });
 
         const sockets = await io.in(joinCode).fetchSockets();
-        const studentSockets = sockets.filter((s) => s.handshake.auth.role === 'STUDENT');
+        const studentSockets = sockets.filter((s) => s.data.userId !== course.teacherId); // All non-teachers
 
         if (thoughts.length === 0) {
             socket.emit('ERROR', { message: 'No thoughts submitted yet!' });
@@ -589,7 +589,7 @@ io.on('connection', (socket: Socket) => {
             }
         });
 
-        const teacherSockets = sockets.filter((s) => s.handshake.auth.role === 'TEACHER');
+        const teacherSockets = sockets.filter((s) => s.data.userId === course.teacherId);
         teacherSockets.forEach((t) => {
             t.emit('DISTRIBUTION_UPDATE', roomAssignments[joinCode]);
         });
@@ -600,10 +600,10 @@ io.on('connection', (socket: Socket) => {
 
     socket.on('TEACHER_REASSIGN_DISTRIBUTION', async ({ joinCode, studentSocketId }) => {
         const user = await userPromise;
-        if (!user || role !== 'TEACHER') return;
+        if (!user) return;
 
         const course = await prisma.course.findUnique({ where: { joinCode } });
-        if (!course) return;
+        if (!course || course.teacherId !== user.id) return;
         const session = await prisma.session.findFirst({
             where: { courseId: course.id, status: 'ACTIVE' },
         });
@@ -665,7 +665,7 @@ io.on('connection', (socket: Socket) => {
             io.to(studentSocketId).emit('RECEIVE_SWAP', { content: randomThought?.content });
 
             // Notify Teacher (Update Graph)
-            const teacherSockets = sockets.filter((s) => s.handshake.auth.role === 'TEACHER');
+            const teacherSockets = sockets.filter((s) => s.data.userId === course.teacherId);
             teacherSockets.forEach((t) => {
                 t.emit('DISTRIBUTION_UPDATE', roomAssignments[joinCode]);
             });
@@ -676,7 +676,7 @@ io.on('connection', (socket: Socket) => {
 
     socket.on('STUDENT_REQUEST_NEW_THOUGHT', async ({ joinCode, currentThoughtContent }) => {
         const user = await userPromise;
-        if (!user || role !== 'STUDENT') return;
+        if (!user) return;
         const course = await prisma.course.findUnique({ where: { joinCode } });
         if (!course) return;
         const session = await prisma.session.findFirst({
@@ -715,12 +715,12 @@ io.on('connection', (socket: Socket) => {
 
             if (roomAssignments[joinCode] && roomAssignments[joinCode][socket.id]) {
                 roomAssignments[joinCode][socket.id] = {
-                    studentName: socket.handshake.auth.name || 'Anonymous',
+                    studentName: socket.data.userName || 'Anonymous',
                     thoughtContent: randomThought!.content,
                     originalAuthorName: randomThought!.author.name,
                 };
                 const sockets = await io.in(joinCode).fetchSockets();
-                const teacherSockets = sockets.filter((s) => s.handshake.auth.role === 'TEACHER');
+                const teacherSockets = sockets.filter((s) => s.data.userId === course.teacherId);
                 teacherSockets.forEach((t) => {
                     t.emit('DISTRIBUTION_UPDATE', roomAssignments[joinCode]);
                 });
@@ -735,14 +735,15 @@ io.on('connection', (socket: Socket) => {
 
     socket.on('END_SESSION', async ({ joinCode }) => {
         const user = await userPromise;
-        if (!user || role !== 'TEACHER') return;
+        if (!user) return;
         const course = await prisma.course.findUnique({ where: { joinCode } });
-        if (course) {
-            await prisma.session.updateMany({
-                where: { courseId: course.id, status: 'ACTIVE' },
-                data: { status: 'COMPLETED' },
-            });
-        }
+        if (!course || course.teacherId !== user.id) return;
+
+        await prisma.session.updateMany({
+            where: { courseId: course.id, status: 'ACTIVE' },
+            data: { status: 'COMPLETED' },
+        });
+
         const surveyLink = 'https://jmu.qualtrics.com/jfe/form/SV_dummy_survey_id';
         io.to(joinCode).emit('SESSION_ENDED', { surveyLink });
         const sockets = await io.in(joinCode).fetchSockets();
@@ -888,7 +889,7 @@ io.on('connection', (socket: Socket) => {
 
     socket.on('GET_PREVIOUS_SESSIONS', async () => {
         const user = await userPromise;
-        if (!user || role !== 'TEACHER') return;
+        if (!user) return;
 
         try {
             const previousSessions = await prisma.session.findMany({
@@ -926,7 +927,7 @@ io.on('connection', (socket: Socket) => {
     socket.on('disconnect', async () => {
         // If a teacher disconnects, mark their active sessions as COMPLETED
         const user = await userPromise;
-        if (user && role === 'TEACHER') {
+        if (user) {
             // Find all active sessions for this teacher
             const activeSessions = await prisma.session.findMany({
                 where: {
