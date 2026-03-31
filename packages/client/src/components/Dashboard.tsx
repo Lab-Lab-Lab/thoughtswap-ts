@@ -8,7 +8,16 @@
  * (at your option) any later version.
  */
 import { useEffect, useState } from 'react';
-import { BookOpen, LogOut, Zap, RefreshCw, GraduationCap, Users, CloudCog } from 'lucide-react';
+import {
+    BookOpen,
+    LogOut,
+    Zap,
+    RefreshCw,
+    GraduationCap,
+    Users,
+    ChevronDown,
+    ChevronUp,
+} from 'lucide-react';
 import ClassCard from './ClassCard';
 
 interface Course {
@@ -40,6 +49,31 @@ export default function Dashboard({
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [openSemesters, setOpenSemesters] = useState<{ [key: string]: boolean }>({});
+
+    // Helper to extract term data for sorting (assuming formats like "Fall 2026", "Spring 2026")
+    const getSemesterValue = (semester: string) => {
+        if (!semester || semester === 'Unknown Semester' || semester === 'Unknown') return 0;
+
+        const terms: Record<string, number> = {
+            Spring: 1,
+            Summer: 2,
+            Fall: 3,
+            Winter: 4,
+        };
+
+        const parts = semester.split(' ');
+        if (parts.length >= 2) {
+            const season = parts[0];
+            const year = parseInt(parts[parts.length - 1], 10);
+
+            if (!isNaN(year) && terms[season]) {
+                // Return a number that can be sorted: YYYY.T (e.g., 2026.3 for Fall 2026)
+                return year + terms[season] / 10;
+            }
+        }
+        return 1; // Default low value for unrecognized formats
+    };
 
     const fetchCourses = async (isRefresh = false) => {
         if (isRefresh) {
@@ -63,6 +97,21 @@ export default function Dashboard({
             const data = await response.json();
             setCourses(data.courses || []);
             setError(null);
+
+            // Automatically open the most recent semester
+            if (data.courses && data.courses.length > 0) {
+                const uniqueSemesters = Array.from(
+                    new Set(data.courses.map((c: Course) => c.semester || 'Unknown Semester'))
+                );
+                uniqueSemesters.sort(
+                    (a, b) => getSemesterValue(String(b)) - getSemesterValue(String(a))
+                );
+
+                if (uniqueSemesters.length > 0) {
+                    const latestSemester = String(uniqueSemesters[0]);
+                    setOpenSemesters({ [latestSemester]: true });
+                }
+            }
         } catch (err) {
             console.error('Error fetching courses:', err);
             setError('Failed to load your courses. Please try again.');
@@ -130,6 +179,18 @@ export default function Dashboard({
 
     const teachingBySemester = groupBySemester(teachingCourses);
     const enrolledBySemester = groupBySemester(enrolledCourses);
+
+    // Get sorted semester keys (newest first)
+    const sortedSemesters = Array.from(
+        new Set([...Object.keys(teachingBySemester), ...Object.keys(enrolledBySemester)])
+    ).sort((a, b) => getSemesterValue(b) - getSemesterValue(a));
+
+    const toggleSemester = (semester: string) => {
+        setOpenSemesters((prev) => ({
+            ...prev,
+            [semester]: !prev[semester],
+        }));
+    };
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-gray-50 to-indigo-50">
@@ -243,65 +304,81 @@ export default function Dashboard({
                     </div>
                 ) : (
                     <div className="space-y-12">
-                        {/* Teaching Courses Section */}
-                        {teachingCourses.length > 0 && (
-                            <div>
-                                <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center space-x-2">
-                                    <GraduationCap className="h-6 w-6 text-amber-600" />
-                                    <span>Teaching ({teachingCourses.length})</span>
-                                </h3>
+                        {sortedSemesters.map((semester) => {
+                            const tCourses = teachingBySemester[semester] || [];
+                            const eCourses = enrolledBySemester[semester] || [];
+                            const isOpen = !!openSemesters[semester];
 
-                                {Object.entries(teachingBySemester).map(
-                                    ([semester, semesterCourses]) => (
-                                        <div key={semester} className="mb-8">
-                                            <h4 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-4 px-1">
+                            return (
+                                <div
+                                    key={semester}
+                                    className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
+                                >
+                                    <button
+                                        onClick={() => toggleSemester(semester)}
+                                        className="w-full flex items-center justify-between p-6 bg-gray-50 hover:bg-gray-100 transition border-b border-gray-200"
+                                    >
+                                        <div className="flex items-center space-x-3">
+                                            <h3 className="text-xl font-bold text-gray-800">
                                                 {semester}
-                                            </h4>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                {semesterCourses.map((course) => (
-                                                    <ClassCard
-                                                        key={course.id}
-                                                        course={course}
-                                                        onActivate={handleActivateCourse}
-                                                        onEnter={handleEnterCourse}
-                                                    />
-                                                ))}
-                                            </div>
+                                            </h3>
+                                            <span className="bg-indigo-100 text-indigo-800 text-xs font-semibold px-2.5 py-0.5 rounded-full">
+                                                {tCourses.length + eCourses.length} Courses
+                                            </span>
                                         </div>
-                                    )
-                                )}
-                            </div>
-                        )}
+                                        {isOpen ? (
+                                            <ChevronUp className="w-6 h-6 text-gray-500" />
+                                        ) : (
+                                            <ChevronDown className="w-6 h-6 text-gray-500" />
+                                        )}
+                                    </button>
 
-                        {/* Enrolled Courses Section */}
-                        {enrolledCourses.length > 0 && (
-                            <div>
-                                <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center space-x-2">
-                                    <Users className="h-6 w-6 text-blue-600" />
-                                    <span>Enrolled ({enrolledCourses.length})</span>
-                                </h3>
+                                    {isOpen && (
+                                        <div className="p-6 space-y-8">
+                                            {/* Teaching Courses */}
+                                            {tCourses.length > 0 && (
+                                                <div>
+                                                    <h4 className="flex items-center space-x-2 text-lg font-bold text-gray-900 mb-4 pb-2 border-b border-gray-100">
+                                                        <GraduationCap className="h-5 w-5 text-amber-600" />
+                                                        <span>Teaching ({tCourses.length})</span>
+                                                    </h4>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                                        {tCourses.map((course) => (
+                                                            <ClassCard
+                                                                key={course.id}
+                                                                course={course}
+                                                                onActivate={handleActivateCourse}
+                                                                onEnter={handleEnterCourse}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
 
-                                {Object.entries(enrolledBySemester).map(
-                                    ([semester, semesterCourses]) => (
-                                        <div key={semester} className="mb-8">
-                                            <h4 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-4 px-1">
-                                                {semester}
-                                            </h4>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                {semesterCourses.map((course) => (
-                                                    <ClassCard
-                                                        key={course.id}
-                                                        course={course}
-                                                        onActivate={handleActivateCourse}
-                                                        onEnter={handleEnterCourse}
-                                                    />
-                                                ))}
-                                            </div>
+                                            {/* Enrolled Courses */}
+                                            {eCourses.length > 0 && (
+                                                <div>
+                                                    <h4 className="flex items-center space-x-2 text-lg font-bold text-gray-900 mb-4 pb-2 border-b border-gray-100">
+                                                        <Users className="h-5 w-5 text-blue-600" />
+                                                        <span>Enrolled ({eCourses.length})</span>
+                                                    </h4>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                                        {eCourses.map((course) => (
+                                                            <ClassCard
+                                                                key={course.id}
+                                                                course={course}
+                                                                onActivate={handleActivateCourse}
+                                                                onEnter={handleEnterCourse}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
-                                    )
-                                )}
-                            </div>
-                        )}
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
             </main>

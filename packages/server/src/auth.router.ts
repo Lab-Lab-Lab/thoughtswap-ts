@@ -57,7 +57,38 @@ interface CanvasCourse {
     original_name?: string;
     course_code?: string;
     created_at?: string;
+    enrollment_term_id?: number;
+    root_account_id?: number;
 }
+
+// Cache for enrollment terms to avoid repeated API calls
+const termCache: { [key: number]: string } = {};
+
+const fetchTermName = async (
+    rootAccountId: number,
+    termId: number,
+    accessToken: string
+): Promise<string> => {
+    // Check cache first
+    if (termCache[termId]) {
+        return termCache[termId];
+    }
+
+    try {
+        const termResponse = await axios.get(
+            `${CANVAS_BASE_URL}/api/v1/accounts/${rootAccountId}/terms/${termId}`,
+            {
+                headers: { Authorization: `Bearer ${accessToken}` },
+            }
+        );
+        const termName = termResponse.data.name;
+        termCache[termId] = termName;
+        return termName;
+    } catch (error) {
+        // Silently handle errors
+        return 'Unknown';
+    }
+};
 
 const fetchUserCourses = async (userId: string, accessToken: string): Promise<CanvasCourse[]> => {
     try {
@@ -188,15 +219,30 @@ router.get('/callback', async (req: Request, res: Response) => {
             );
             const isTeacher = teacherEnrollments.length > 0;
 
+            let semester = 'Unknown';
+            if (course.enrollment_term_id && course.root_account_id) {
+                try {
+                    semester = await fetchTermName(
+                        course.root_account_id,
+                        course.enrollment_term_id,
+                        access_token
+                    );
+                } catch (error) {
+                    // Silently handle errors, semester remains 'Unknown'
+                }
+            }
+
             // Upsert course (linked by Canvas course ID)
             const courseRecord = await prisma.course.upsert({
                 where: { canvasId: String(course.id) },
                 update: {
                     title: String(courseTitle),
+                    semester,
                 },
                 create: {
                     canvasId: String(course.id),
                     title: String(courseTitle),
+                    semester,
                     joinCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
                     teacherId: isTeacher ? localUser.id : localUser.id, // Teachers will be properly assigned
                 },
