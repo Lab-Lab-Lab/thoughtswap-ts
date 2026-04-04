@@ -257,7 +257,7 @@ router.get('/callback', async (req: Request, res: Response) => {
                     title: String(courseTitle),
                     semester,
                     joinCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
-                    teacherId: isTeacher ? localUser.id : null,
+                    ...(isTeacher ? { teacherId: localUser.id } : {}),
                 },
             });
 

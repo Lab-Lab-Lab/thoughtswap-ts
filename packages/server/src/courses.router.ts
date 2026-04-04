@@ -133,8 +133,16 @@ router.get('/', async (req: Request, res: Response) => {
 
         // Get all courses where user is a teacher
         const teacherCourses = await prisma.course.findMany({
-            where: { teacherId: user.id },
-            include: { sessions: true },
+            where: {
+                teacherId: user.id,
+                OR: [
+                    { canvasId: { not: null } },
+                    { students: { some: {} } },
+                    { isActive: true },
+                    { sessions: { some: { status: 'ACTIVE' } } },
+                ],
+            },
+            include: { sessions: { where: { status: 'ACTIVE' } } },
         });
 
         // Get all courses where user is a student
@@ -144,7 +152,7 @@ router.get('/', async (req: Request, res: Response) => {
                     some: { id: user.id },
                 },
             },
-            include: { sessions: true },
+            include: { sessions: { where: { status: 'ACTIVE' } } },
         });
 
         // Combine and deduplicate

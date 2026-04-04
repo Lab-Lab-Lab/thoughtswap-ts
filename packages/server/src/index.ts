@@ -250,34 +250,49 @@ io.on('connection', (socket: Socket) => {
     });
 
     // --- CLASS MANAGEMENT ---
-    socket.on('TEACHER_START_CLASS', async () => {
+    socket.on('TEACHER_START_CLASS', async ({ courseId }: { courseId?: string } = {}) => {
         const user = await userPromise;
         if (!user) return;
 
-        let joinCode = generateRoomCode();
-        let attempts = 0;
-        while ((await prisma.course.findUnique({ where: { joinCode } })) && attempts < 10) {
-            joinCode = generateRoomCode();
-            attempts++;
+        if (!courseId) {
+            socket.emit('ERROR', { message: 'Course is required to launch a session.' });
+            return;
         }
 
-        const course = await prisma.course.create({
-            data: {
-                title: `${user.name}'s Class ${new Date().toLocaleDateString()}`,
-                joinCode: joinCode,
-                teacherId: user.id,
-            },
+        const course = await prisma.course.findUnique({
+            where: { id: courseId },
+        });
+        if (!course || course.teacherId !== user.id) {
+            socket.emit('ERROR', { message: 'You are not authorized to launch this course.' });
+            return;
+        }
+
+        if (!course.isActive) {
+            socket.emit('ERROR', { message: 'Course is not active. Activate it first.' });
+            return;
+        }
+
+        let session = await prisma.session.findFirst({
+            where: { courseId: course.id, status: 'ACTIVE' },
         });
 
-        const session = await prisma.session.create({
-            data: {
-                courseId: course.id,
-                status: 'ACTIVE',
-                maxSwapRequests: 1,
-            },
-        });
+        if (!session) {
+            session = await prisma.session.create({
+                data: {
+                    courseId: course.id,
+                    status: 'ACTIVE',
+                    maxSwapRequests: 1,
+                },
+            });
+            roomAssignments[course.joinCode] = {};
+        } else if (!roomAssignments[course.joinCode]) {
+            roomAssignments[course.joinCode] = {};
+        }
 
-        roomAssignments[joinCode] = {};
+        const activePrompt = await prisma.promptUse.findFirst({
+            where: { sessionId: session.id },
+            orderBy: { id: 'desc' },
+        });
 
         socket.join(course.joinCode);
         socket.emit('CLASS_STARTED', {
@@ -285,8 +300,29 @@ io.on('connection', (socket: Socket) => {
             sessionId: session.id,
             maxSwapRequests: session.maxSwapRequests,
         });
-        broadcastParticipantList(course.joinCode, null);
-        logEvent('START_CLASS', user.id, { joinCode, sessionId: session.id });
+
+        if (activePrompt) {
+            broadcastParticipantList(course.joinCode, activePrompt.id);
+            const thoughts = await prisma.thought.findMany({
+                where: { promptUseId: activePrompt.id },
+                include: { author: true },
+            });
+            const thoughtData = thoughts.map((t) => ({
+                id: t.id,
+                content: t.content,
+                authorName: t.author.name,
+            }));
+            socket.emit('THOUGHTS_UPDATE', thoughtData);
+        } else {
+            broadcastParticipantList(course.joinCode, null);
+            socket.emit('THOUGHTS_UPDATE', []);
+        }
+
+        logEvent('START_CLASS', user.id, {
+            courseId: course.id,
+            joinCode: course.joinCode,
+            sessionId: session.id,
+        });
     });
 
     socket.on('UPDATE_SESSION_SETTINGS', async ({ joinCode, maxSwapRequests }) => {
@@ -925,32 +961,52 @@ io.on('connection', (socket: Socket) => {
     });
 
     socket.on('disconnect', async () => {
-        // If a teacher disconnects, mark their active sessions as COMPLETED
         const user = await userPromise;
-        if (user) {
-            // Find all active sessions for this teacher
-            const activeSessions = await prisma.session.findMany({
-                where: {
-                    status: 'ACTIVE',
-                    course: {
-                        teacherId: user.id,
-                    },
-                },
-                include: { course: true },
-            });
+        if (!user) return;
 
-            // Mark them all as completed
-            for (const session of activeSessions) {
-                await prisma.session.update({
-                    where: { id: session.id },
-                    data: { status: 'COMPLETED' },
+        // Grace period prevents session teardown during fast page refresh/reconnect.
+        setTimeout(async () => {
+            try {
+                const sockets = await io.fetchSockets();
+                const stillConnected = sockets.some((s) => s.data.userId === user.id);
+                if (stillConnected) return;
+
+                const activeSessions = await prisma.session.findMany({
+                    where: {
+                        status: 'ACTIVE',
+                        course: {
+                            teacherId: user.id,
+                        },
+                    },
+                    include: { course: true },
                 });
-                logEvent('SESSION_AUTO_ENDED', user.id, {
-                    sessionId: session.id,
-                    joinCode: session.course.joinCode,
-                });
+
+                for (const session of activeSessions) {
+                    await prisma.session.update({
+                        where: { id: session.id },
+                        data: { status: 'COMPLETED' },
+                    });
+
+                    io.to(session.course.joinCode).emit('SESSION_ENDED', {
+                        surveyLink: 'https://jmu.qualtrics.com/jfe/form/SV_dummy_survey_id',
+                    });
+
+                    const roomSockets = await io.in(session.course.joinCode).fetchSockets();
+                    roomSockets.forEach((s) => s.leave(session.course.joinCode));
+
+                    if (roomAssignments[session.course.joinCode]) {
+                        delete roomAssignments[session.course.joinCode];
+                    }
+
+                    logEvent('SESSION_AUTO_ENDED', user.id, {
+                        sessionId: session.id,
+                        joinCode: session.course.joinCode,
+                    });
+                }
+            } catch (e) {
+                console.error('Auto end on disconnect failed', e);
             }
-        }
+        }, 6000);
     });
 });
 

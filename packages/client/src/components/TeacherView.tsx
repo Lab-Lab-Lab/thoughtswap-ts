@@ -24,6 +24,8 @@ interface AuthData {
 
 interface TeacherViewProps {
     auth: AuthData;
+    courseId: string;
+    courseJoinCode: string;
 }
 
 interface Participant {
@@ -72,9 +74,9 @@ interface PromptPayload {
     options?: string[];
 }
 
-export default function TeacherView({ auth }: TeacherViewProps) {
+export default function TeacherView({ auth, courseId, courseJoinCode }: TeacherViewProps) {
     const [isActive, setIsActive] = useState(false);
-    const [joinCode, setJoinCode] = useState('');
+    const [joinCode, setJoinCode] = useState(courseJoinCode);
 
     // Prompt Composer State
     const [promptInput, setPromptInput] = useState('');
@@ -128,12 +130,23 @@ export default function TeacherView({ auth }: TeacherViewProps) {
         const storedJoinCode = localStorage.getItem('thoughtswap_joinCode');
         const storedIsTeacherActive = localStorage.getItem('thoughtswap_teacher_active');
 
-        if (storedJoinCode && storedIsTeacherActive === 'true' && !isActive) {
+        if (
+            storedJoinCode &&
+            storedIsTeacherActive === 'true' &&
+            storedJoinCode === courseJoinCode &&
+            !isActive
+        ) {
             if (!socket.auth) socket.auth = { name: auth.name, role: auth.role, email: auth.email };
             if (!socket.connected) socket.connect();
             socket.emit('TEACHER_REJOIN', { joinCode: storedJoinCode });
         }
-    }, [auth, isActive]);
+    }, [auth, courseJoinCode, isActive]);
+
+    useEffect(() => {
+        if (!isActive) {
+            setJoinCode(courseJoinCode);
+        }
+    }, [courseJoinCode, isActive]);
 
     useEffect(() => {
         if (!socket.auth) socket.auth = { name: auth.name, role: auth.role, email: auth.email };
@@ -378,7 +391,7 @@ export default function TeacherView({ auth }: TeacherViewProps) {
 
                             <div className="space-y-3">
                                 <button
-                                    onClick={() => socket.emit('TEACHER_START_CLASS')}
+                                    onClick={() => socket.emit('TEACHER_START_CLASS', { courseId })}
                                     className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-lg shadow-lg transition transform hover:scale-105"
                                 >
                                     Launch Session

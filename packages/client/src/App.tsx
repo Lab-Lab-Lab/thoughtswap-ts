@@ -32,6 +32,13 @@ interface CourseSelection {
     isTeacher: boolean;
 }
 
+const emptyCourseSelection: CourseSelection = { courseId: null, joinCode: null, isTeacher: false };
+
+function getCourseIdFromPath(pathname: string): string | null {
+    const match = pathname.match(/^\/courses\/([^/]+)$/);
+    return match ? decodeURIComponent(match[1]) : null;
+}
+
 // 24 Hours in milliseconds
 const SESSION_DURATION = 24 * 60 * 60 * 1000;
 
@@ -51,8 +58,12 @@ function App() {
 
     const [courseSelection, setCourseSelection] = useState<CourseSelection>(() => {
         const saved = localStorage.getItem('thoughtswap_course_selection');
-        return saved ? JSON.parse(saved) : { courseId: null, joinCode: null, isTeacher: false };
+        return saved ? JSON.parse(saved) : emptyCourseSelection;
     });
+
+    const [routeCourseId, setRouteCourseId] = useState<string | null>(() =>
+        getCourseIdFromPath(window.location.pathname)
+    );
 
     const [joinCode, setJoinCode] = useState('');
     const [authErrorModal, setAuthErrorModal] = useState(false);
@@ -73,8 +84,11 @@ function App() {
         } else {
             localStorage.removeItem('thoughtswap_auth');
             // Clear course selection when logging out
-            setCourseSelection({ courseId: null, joinCode: null, isTeacher: false });
+            setCourseSelection(emptyCourseSelection);
             localStorage.removeItem('thoughtswap_course_selection');
+            setJoinCode('');
+            setRouteCourseId(null);
+            window.history.replaceState({}, document.title, '/');
         }
     };
 
@@ -82,14 +96,21 @@ function App() {
         const selection = { courseId, joinCode, isTeacher };
         setCourseSelection(selection);
         localStorage.setItem('thoughtswap_course_selection', JSON.stringify(selection));
+        setJoinCode(joinCode);
+        const nextPath = `/courses/${encodeURIComponent(courseId)}`;
+        window.history.pushState({}, document.title, nextPath);
+        setRouteCourseId(courseId);
 
         // Determine role based on whether user is teacher of this course
         updateAuth({ ...authState, role: isTeacher ? 'TEACHER' : 'STUDENT' });
     };
 
     const handleBackToDashboard = () => {
-        setCourseSelection({ courseId: null, joinCode: null, isTeacher: false });
+        setCourseSelection(emptyCourseSelection);
         localStorage.removeItem('thoughtswap_course_selection');
+        setJoinCode('');
+        window.history.pushState({}, document.title, '/');
+        setRouteCourseId(null);
         updateAuth({ ...authState, role: null });
     };
 
@@ -123,6 +144,67 @@ function App() {
 
         handleAuthSuccess();
     }, []);
+
+    useEffect(() => {
+        const handlePopState = () => {
+            setRouteCourseId(getCourseIdFromPath(window.location.pathname));
+        };
+
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, []);
+
+    useEffect(() => {
+        if (!authState.isLoggedIn) return;
+
+        if (!routeCourseId) {
+            if (courseSelection.courseId) {
+                setCourseSelection(emptyCourseSelection);
+                localStorage.removeItem('thoughtswap_course_selection');
+                setJoinCode('');
+                if (authState.role) {
+                    updateAuth({ ...authState, role: null });
+                }
+            }
+            return;
+        }
+
+        if (courseSelection.courseId === routeCourseId) {
+            if (joinCode !== (courseSelection.joinCode || '')) {
+                setJoinCode(courseSelection.joinCode || '');
+            }
+            return;
+        }
+
+        const saved = localStorage.getItem('thoughtswap_course_selection');
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved) as CourseSelection;
+                if (parsed.courseId === routeCourseId) {
+                    setCourseSelection(parsed);
+                    setJoinCode(parsed.joinCode || '');
+                    const nextRole: UserRole = parsed.isTeacher ? 'TEACHER' : 'STUDENT';
+                    if (authState.role !== nextRole) {
+                        updateAuth({ ...authState, role: nextRole });
+                    }
+                    return;
+                }
+            } catch {
+                localStorage.removeItem('thoughtswap_course_selection');
+            }
+        }
+
+        window.history.replaceState({}, document.title, '/');
+        setRouteCourseId(null);
+    }, [
+        routeCourseId,
+        authState,
+        authState.isLoggedIn,
+        authState.role,
+        courseSelection.courseId,
+        courseSelection.joinCode,
+        joinCode,
+    ]);
 
     useEffect(() => {
         const handleAuthError = () => {
@@ -253,7 +335,7 @@ function App() {
     }
 
     // If logged in but no course selected, show dashboard
-    if (authState.isLoggedIn && !courseSelection.courseId) {
+    if (authState.isLoggedIn && !routeCourseId) {
         return (
             <Dashboard
                 userName={authState.name}
@@ -261,6 +343,14 @@ function App() {
                 onSelectCourse={handleSelectCourse}
                 onLogout={handleLogout}
             />
+        );
+    }
+
+    if (authState.isLoggedIn && routeCourseId && courseSelection.courseId !== routeCourseId) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-600">
+                Loading course...
+            </div>
         );
     }
 
@@ -321,7 +411,11 @@ function App() {
                 </header>
 
                 {authState.role === 'TEACHER' ? (
-                    <TeacherView auth={authState} />
+                    <TeacherView
+                        auth={authState}
+                        courseId={courseSelection.courseId || ''}
+                        courseJoinCode={courseSelection.joinCode || ''}
+                    />
                 ) : (
                     <StudentView auth={authState} onJoin={handleStudentJoin} joinCode={joinCode} />
                 )}
