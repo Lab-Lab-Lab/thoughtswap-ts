@@ -28,13 +28,20 @@ The easiest way to build and deploy ThoughtSwap locally is using Docker Compose.
     Open `.env` and populate the **Canvas Configuration** section (Client ID, Secret, URL). You can generally leave the Database and Port configurations at their defaults.
 
 2.  **Start the Application:**
-    Run the following command to build the images and start the services:
+    1. If running a demo (where you want others to connect and try out the app running on your computer)
+        1. start ngrok first:
+            ```
+            ngrok 5173
+            ```
+        2. get the ngrok URL from the `Forwarding` output, e.g. `https://9ca1-128-130-184-40.ngrok-free.app`
+        3. update [vite.config.js](./packages/client/vite.config.ts) to add the ngrok hostname to the `allowedhosts`
+    2. Run the following command to build the images and start the services:
 
-    ```bash
-    docker-compose up --build
-    ```
+        ```bash
+        docker-compose up --build
+        ```
 
-    _Note: The server container will automatically apply database migrations upon startup._
+        _Note: The server container will automatically apply database migrations upon startup._
 
 3.  **Access:**
     - **Client:** [http://localhost:5173](http://localhost:5173)
@@ -46,6 +53,14 @@ The easiest way to build and deploy ThoughtSwap locally is using Docker Compose.
     ```bash
     docker-compose exec server npx prisma db seed
     ```
+5. Troubleshooting:
+    1. Blocked request
+        1. after adding the ngrok host to vite config (see above), you have to rebuild at least the frontend docker container, so maybe just kill the docker container and re-run
+            ```bash
+            docker-compose up --build
+            ```
+
+
 
 ---
 

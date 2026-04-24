@@ -26,5 +26,6 @@ export default defineConfig({
                 ws: true,
             },
         },
+        allowedHosts: ['localhost', '9ca1-128-130-184-40.ngrok-free.app', '95ce-128-130-255-179.ngrok-free.app', '742c-2607-b400-810-0-4c85-6c3-5b5-86ca.ngrok-free.app', 'fac0-2607-b400-810-0-4c85-6c3-5b5-86ca.ngrok-free.app','*.ngrok-free.app', '*']
     },
 });
